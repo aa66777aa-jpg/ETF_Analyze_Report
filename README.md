@@ -12,11 +12,13 @@
 
 ## 範例輸出
 
+圖檔存於 `Report/` 資料夾：
+
 | 台股 ETF | 美股指數 |
 |---|---|
-| `009816_TW.png` | `DJI.png` |
-| `00935_TW.png` | `GSPC.png` |
-| `TWII.png` | `IXIC.png` |
+| `Report/009816_TW.png` | `Report/DJI.png` |
+| `Report/00935_TW.png` | `Report/GSPC.png` |
+| `Report/TWII.png` | `Report/IXIC.png` |
 
 ## 安裝
 
@@ -49,7 +51,9 @@ python ETF.py
 ### 使用 Makefile（含 lint & format）
 
 ```bash
-make lint
+make lint   # ruff 檢查並格式化
+make run    # 執行 ETF.py（透過 uv 自動安裝相依套件）
+make all    # lint 後接著 run
 ```
 
 ## 設定
@@ -67,7 +71,8 @@ STOCK_LIST = [
     "^IXIC",        # 那斯達克
 ]
 
-LOOKBACK_DAYS = 365   # 回溯天數
+LOOKBACK_DAYS = 365   # 觀察天數
+WARMUP_DAYS = 60      # 多空指標回看天數
 W_PERIOD = 14         # 威廉指標回看天數
 ```
 
@@ -79,7 +84,7 @@ W_PERIOD = 14         # 威廉指標回看天數
 
 ## 輸出
 
-每支股票產生一個 PNG 圖檔，儲存於腳本所在目錄，檔名為股票代號（特殊字元替換為 `_`）。
+每支股票產生一個 PNG 圖檔，儲存於腳本所在目錄的 `Report/` 資料夾，檔名為股票代號（特殊字元替換為 `_`）。
 
 圖表包含四個子圖：
 

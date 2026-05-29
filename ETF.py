@@ -1,6 +1,8 @@
 import base64
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from io import BytesIO
 
 import matplotlib
 import matplotlib.font_manager as _fm
@@ -15,8 +17,8 @@ for _fp in _fm.findSystemFonts():
         _fm.fontManager.addfont(_fp)
 
 matplotlib.rcParams["font.family"] = [
-    "Microsoft JhengHei",  # Windows 繁體中文（微軟正黑體）
-    "Microsoft YaHei",  # Windows 簡體中文（微軟雅黑）
+    "Microsoft JhengHei",
+    "Microsoft YaHei",
     "WenQuanYi Zen Hei",
     "WenQuanYi Micro Hei",
     "Noto Sans CJK TC",
@@ -46,83 +48,111 @@ STOCK_LIST = [
     # 繼續新增你想觀察的股票代號...
 ]
 
-LOOKBACK_DAYS = 365  # 觀察天數
-WARMUP_DAYS = 60  # 多空指標回看天數
+LOOKBACK_DAYS = 365  # 顯示的觀察天數
+WARMUP_DAYS = 180  # 預先多抓的資料天數（確保 MA120 有足夠暖機）
+RSI_PERIOD = 14  # RSI 回看天數
 W_PERIOD = 14  # 威廉指標回看天數
-BBI_PERIODS = (3, 6, 12, 24)  # BBI 均線參數
-VOL_MA_SHORT = 5  # 短期量均
-VOL_MA_LONG = 20  # 長期量均
+MA_PERIODS = (20, 60, 120)  # 移動均線參數
+HIGH_WINDOW = 252  # 52 週高點視窗（約 1 年交易日）
+
+# 訊號閾值常數
+RSI_OVERSOLD = 35  # RSI 超賣線（加碼）
+RSI_OVERBOUGHT = 70  # RSI 過熱線（暫緩）
+DD_STRONG = -15  # 距高點跌幅：積極加碼區（+2 分）
+DD_MILD = -8  # 距高點跌幅：考慮加碼區（+1 分）
+DD_NEAR_HIGH = -3  # 距高點跌幅：接近高點（-1 分）
+MA60_LOW = -5  # 低於 MA60 偏差（加碼）
+MA60_HIGH = 8  # 高於 MA60 偏差（暫緩）
+WR_OVERSOLD = -80  # Williams %R 超賣線（加碼）
+WR_OVERBOUGHT = -20  # Williams %R 超買線（暫緩）
+
 TODAY = date.today().isoformat()
-END_DATE = (date.today() + timedelta(days=1)).isoformat()  # yfinance end is exclusive
+END_DATE = (date.today() + timedelta(days=1)).isoformat()
 START_DATE = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
 FETCH_START = (date.today() - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isoformat()
+
+# 各建議對應的顏色（台股慣例：紅 = 買機會，綠 = 過熱謹慎）
+_OVERALL_COLOR = {
+    "積極加碼": "#e63946",
+    "考慮加碼": "#f4a261",
+    "正常定期投入": "#888888",
+    "謹慎觀察": "#457b9d",
+    "暫緩加碼": "#2a9d8f",
+}
+_OVERALL_CLASS = {
+    "積極加碼": "add-strong",
+    "考慮加碼": "add",
+    "正常定期投入": "neutral",
+    "謹慎觀察": "caution",
+    "暫緩加碼": "wait",
+}
+_SIG_CLASS = {"加碼": "add", "暫緩": "wait", "正常": "neutral"}
 
 
 def _safe_id(stock_id: str) -> str:
     return stock_id.replace("^", "").replace(".", "_")
 
 
-def _price_col(df: pd.DataFrame) -> str:
-    return "Close"
+def _is_index(stock_id: str) -> bool:
+    return stock_id.startswith("^")
 
 
 def analyze_stock(stock_id: str):
     """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足則回傳 None。"""
     print(f"\n📥 正在下載：{stock_id} ...")
     df = yf.download(
-        stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=False
+        stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=True
     )
 
     if df.empty:
         print(f"⚠️  {stock_id} 無資料，跳過。")
         return None
 
-    # 清理欄位多重索引（新版 yfinance 有時會產生多重索引）
-    # level 0 恆為 Price 名稱（Adj Close / Close / High…），直接取用
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    # auto_adjust=True：Close 已還原（含股利、拆股），對應 Yahoo Finance 圖表價格
-    price = df[_price_col(df)]
+    price = df["Close"]
+
+    # --- RSI (Wilder's smoothing) ---
+    delta = price.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(
+        alpha=1 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False
+    ).mean()
+    avg_loss = loss.ewm(
+        alpha=1 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False
+    ).mean()
+    rs = avg_gain / avg_loss
+    df["RSI"] = 100 - (100 / (1 + rs))
+
+    # --- 移動均線（min_periods=半週期，讓成立未滿的 ETF 也能部分計算）---
+    for p in MA_PERIODS:
+        df[f"MA{p}"] = price.rolling(window=p, min_periods=max(p // 2, 10)).mean()
+
+    # --- 價格相對 MA60 的偏差 (%) ---
+    df["MA60_Dev"] = (price - df["MA60"]) / df["MA60"] * 100
+
+    # --- 距 52 週高點的跌幅 (%) ---
+    df["High_252"] = price.rolling(window=HIGH_WINDOW, min_periods=60).max()
+    df["Drawdown"] = (price - df["High_252"]) / df["High_252"] * 100
 
     # --- 威廉指標 (Williams %R) ---
     high_n = df["High"].rolling(window=W_PERIOD).max()
     low_n = df["Low"].rolling(window=W_PERIOD).min()
     df["Williams_%R"] = ((high_n - price) / (high_n - low_n)) * -100
 
-    # --- 多空指標 (BBI) ---
-    df["BBI"] = sum(price.rolling(window=p).mean() for p in BBI_PERIODS) / len(
-        BBI_PERIODS
-    )
+    # --- 成交量比率（相對 20 日均量）---
+    df["Vol_MA20"] = df["Volume"].rolling(window=20, min_periods=5).mean()
+    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"]).fillna(1.0)
 
-    # --- MACD ---
-    ema12 = price.ewm(span=12, adjust=False).mean()
-    ema26 = price.ewm(span=26, adjust=False).mean()
-    df["MACD_DIF"] = ema12 - ema26
-    df["MACD_DEA"] = df["MACD_DIF"].ewm(span=9, adjust=False).mean()
-    df["MACD_OSC"] = df["MACD_DIF"] - df["MACD_DEA"]
-
-    # --- 成交量分析 ---
-    # 部分指數（如 ^DJI、^TWII）Yahoo Finance 回報 Volume 為 NaN 或 0，
-    # 若不先填補，Vol_MA20=0 → Vol_Ratio=NaN/inf → dropna 會清空整個 df。
-    df["Volume"] = df["Volume"].fillna(0)
-    df["Vol_MA5"] = df["Volume"].rolling(window=VOL_MA_SHORT).mean()
-    df["Vol_MA20"] = df["Volume"].rolling(window=VOL_MA_LONG).mean()
-    df["Vol_Ratio"] = df["Volume"] / df["Vol_MA20"]  # 量比（相對長期均量）
-    # 將除以 0 產生的 inf 轉為 NaN，再統一用 0 填補（量比無意義時視為 0）
-    df["Vol_Ratio"] = (
-        df["Vol_Ratio"].replace([float("inf"), float("-inf")], float("nan")).fillna(0)
-    )
-
-    # dropna 排除 Vol_Ratio（已手動填補），僅對其餘指標欄位做清理
-    non_vol_cols = [c for c in df.columns if c != "Vol_Ratio"]
-    df.dropna(subset=non_vol_cols, inplace=True)
+    # MA120 不列入必要欄位，讓成立未滿 120 天的 ETF 也能繼續分析
+    df = df.dropna(subset=["RSI", "MA60", "Williams_%R"])
 
     if df.empty:
         print(f"⚠️  {stock_id} dropna 後無資料，跳過。")
         return None
 
-    # 截回真正的觀察區間（暖機資料已完成指標計算，不再需要）
     df = df[df.index >= pd.Timestamp(START_DATE)]
 
     if df.empty:
@@ -132,142 +162,359 @@ def analyze_stock(stock_id: str):
     return df
 
 
-def calc_period_return(df: pd.DataFrame) -> tuple[float, int]:
-    """計算觀察期間總報酬率與實際天數（使用還原後價格）。"""
-    col = _price_col(df)
-    first_close = df[col].iloc[0]
-    last_close = df[col].iloc[-1]
-    n_days = (df.index[-1] - df.index[0]).days
-    if n_days <= 0:
-        return float("nan"), 0
-    total_return = (last_close - first_close) / first_close
-    return total_return, n_days
+def generate_signal(df: pd.DataFrame) -> dict:
+    """根據最新一日數據判斷 ETF 定期投入的加碼時機。
 
+    評分邏輯（距高點跌幅最高 +2，其餘各項 -1 / 0 / +1）：
+      +2 = 強力加碼訊號（距高點明顯回落，DD_STRONG）
+      +1 = 加碼訊號（市場相對低估）
+      -1 = 暫緩訊號（市場相對高估）
+       0 = 正常
 
-def plot_stock(stock_id: str, df: pd.DataFrame):
-    """繪製單支股票的四格子圖並存檔。"""
-    period_ret, n_days = calc_period_return(df)
-    period_ret_str = (
-        f"{period_ret * 100:+.2f}% ({n_days}天)" if not pd.isna(period_ret) else "N/A"
-    )
-    if pd.isna(period_ret):
-        ann_ret_color = "#888888"
-    elif period_ret >= 0:
-        ann_ret_color = "#e63946"  # 台股慣例：漲紅跌綠
+    綜合建議：
+      score >= 2  → 積極加碼
+      score == 1  → 考慮加碼
+      score == 0  → 正常定期投入
+      score == -1 → 謹慎觀察
+      score <= -2 → 暫緩加碼
+
+    最高分：+5（距高點明顯回落 +2，其餘三項均 +1）
+    最低分：-4（四項指標均 -1）
+    """
+    latest = df.iloc[-1]
+    price = float(latest["Close"])
+    signals = {}
+
+    # --- RSI ---
+    rsi = float(latest["RSI"])
+    if rsi < RSI_OVERSOLD:
+        signals["rsi"] = ("加碼", f"超賣（RSI {rsi:.1f}）", 1)
+    elif rsi > RSI_OVERBOUGHT:
+        signals["rsi"] = ("暫緩", f"過熱（RSI {rsi:.1f}）", -1)
     else:
-        ann_ret_color = "#2a9d8f"
+        signals["rsi"] = ("正常", f"中性（RSI {rsi:.1f}）", 0)
+
+    # --- 距 52 週高點跌幅（明顯回落 +2 分，有所回落 +1 分） ---
+    drawdown = float(latest["Drawdown"])
+    if drawdown <= DD_STRONG:
+        signals["drawdown"] = ("加碼", f"距高點 {drawdown:.1f}%（明顯回落）", 2)
+    elif drawdown <= DD_MILD:
+        signals["drawdown"] = ("加碼", f"距高點 {drawdown:.1f}%（有所回落）", 1)
+    elif drawdown >= DD_NEAR_HIGH:
+        signals["drawdown"] = ("暫緩", f"距高點僅 {drawdown:.1f}%（接近高點）", -1)
+    else:
+        signals["drawdown"] = ("正常", f"距高點 {drawdown:.1f}%", 0)
+
+    # --- 價格 vs MA60 ---
+    ma60_dev = float(latest["MA60_Dev"])
+    if ma60_dev <= MA60_LOW:
+        signals["ma60"] = ("加碼", f"低於 MA60 {ma60_dev:.1f}%（均線下方）", 1)
+    elif ma60_dev >= MA60_HIGH:
+        signals["ma60"] = ("暫緩", f"高於 MA60 +{ma60_dev:.1f}%（過度延伸）", -1)
+    else:
+        signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
+
+    # --- Williams %R ---
+    wr = float(latest["Williams_%R"])
+    if wr <= WR_OVERSOLD:
+        signals["williams"] = ("加碼", f"超賣（{wr:.1f}）", 1)
+    elif wr >= WR_OVERBOUGHT:
+        signals["williams"] = ("暫緩", f"超買（{wr:.1f}）", -1)
+    else:
+        signals["williams"] = ("正常", f"中性（{wr:.1f}）", 0)
+
+    score = sum(v[2] for v in signals.values())
+
+    if score >= 2:
+        overall = "積極加碼"
+    elif score == 1:
+        overall = "考慮加碼"
+    elif score == 0:
+        overall = "正常定期投入"
+    elif score == -1:
+        overall = "謹慎觀察"
+    else:
+        overall = "暫緩加碼"
+
+    return {"signals": signals, "score": score, "overall": overall, "price": price}
+
+
+def generate_index_context(df: pd.DataFrame) -> dict:
+    """指數（^ 開頭）不給加碼建議，改輸出市場環境標籤供參考。"""
+    latest = df.iloc[-1]
+    rsi = float(latest["RSI"])
+    drawdown = float(latest["Drawdown"])
+    ma60_dev = float(latest["MA60_Dev"])
+    wr = float(latest["Williams_%R"])
+
+    bull = sum([rsi > 60, drawdown > -5, ma60_dev > 3])
+    bear = sum([rsi < 45, drawdown <= -12, ma60_dev < -3])
+
+    if bull >= 2:
+        env, env_cls = "偏多", "wait"
+    elif bear >= 2:
+        env, env_cls = "偏空", "add"
+    else:
+        env, env_cls = "中性", "neutral"
+
+    return {
+        "is_index": True,
+        "overall": f"市場環境：{env}",
+        "overall_cls": env_cls,
+        "score": 0,
+        "price": float(latest["Close"]),
+        "signals": {
+            "rsi": (f"RSI {rsi:.0f}", f"RSI={rsi:.1f}", 0),
+            "drawdown": (f"{drawdown:.1f}%", f"距高點跌幅={drawdown:.1f}%", 0),
+            "ma60": (f"MA60 {ma60_dev:+.1f}%", f"MA60偏差={ma60_dev:.1f}%", 0),
+            "williams": (f"W%R {wr:.0f}", f"Williams %%R={wr:.1f}", 0),
+        },
+    }
+
+
+def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
+    """繪製四格子圖（均線+量 / RSI / Williams %R / 距高點跌幅）並存檔。"""
+    overall = signal_info["overall"]
+    score = signal_info["score"]
+    last_price = signal_info["price"]
+    is_index = signal_info.get("is_index", False)
+    ann_color = _OVERALL_COLOR.get(overall, "#888888")
 
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(13, 14), sharex=True)
     fig.suptitle(
-        f"{stock_id}  技術指標分析  ({START_DATE} ~ {TODAY})",
+        f"{stock_id}  定期投入時機分析  ({START_DATE} ~ {TODAY})",
         fontsize=14,
         fontweight="bold",
     )
 
-    # ── 圖一：股價 & BBI ─────────────────────────────
-    col = _price_col(df)
-    ax1.plot(df.index, df[col], label="收盤價", color="black", linewidth=1.5)
-    ax1.plot(df.index, df["BBI"], label="BBI", color="orange", linestyle="--")
+    # ── 圖一：收盤價 + 移動均線 ─────────────────────────
+    ax1.plot(df.index, df["Close"], label="收盤價", color="black", linewidth=1.5)
+    ax1.plot(
+        df.index, df["MA20"], label="MA20", color="#f4a261", linewidth=1, linestyle="--"
+    )
+    ax1.plot(
+        df.index,
+        df["MA60"],
+        label="MA60",
+        color="#e76f51",
+        linewidth=1.2,
+        linestyle="--",
+    )
+    ax1.plot(
+        df.index,
+        df["MA120"],
+        label="MA120",
+        color="#264653",
+        linewidth=1.2,
+        linestyle="--",
+    )
     ax1.set_ylabel("Price")
-
-    first_price = df[col].iloc[0]
-    last_price = df[col].iloc[-1]
+    ann_text = (
+        f"{overall}\n最新收盤：{last_price:.2f}"
+        if is_index
+        else f"建議：{overall}（{score:+d} 分）\n最新收盤：{last_price:.2f}"
+    )
     ax1.annotate(
-        f"期間報酬率：{period_ret_str}\n"
-        f"期初：{first_price:.2f}  →  期末：{last_price:.2f}",
+        ann_text,
         xy=(df.index[-1], last_price),
         xytext=(-10, 10),
         textcoords="offset points",
         ha="right",
         fontsize=9,
-        color=ann_ret_color,
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=ann_ret_color, alpha=0.8),
+        color=ann_color,
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=ann_color, alpha=0.8),
     )
-
     ax1.legend(loc="upper left")
     ax1.grid(True, alpha=0.4)
 
-    # ── 圖二：威廉指標 ───────────────────────────────
+    # ── 成交量（副 y 軸，壓縮至圖底 20%）────────────────
+    ax1v = ax1.twinx()
+    price_chg = df["Close"].diff()
+    vol_colors = ["#aec6e8" if c >= 0 else "#e8b4aa" for c in price_chg]
+    ax1v.bar(df.index, df["Vol_Ratio"], color=vol_colors, alpha=0.28, width=1, zorder=0)
+    ax1v.axhline(1.0, color="gray", linestyle=":", linewidth=0.6, alpha=0.5)
+    vol_top = max(df["Vol_Ratio"].quantile(0.97) * 5, 5)
+    ax1v.set_ylim(0, vol_top)
+    ax1v.set_ylabel("量比", color="#aaa", fontsize=7)
+    ax1v.tick_params(axis="y", labelcolor="#aaa", labelsize=6)
+
+    # ── 圖二：RSI ────────────────────────────────────────
     ax2.plot(
-        df.index, df["Williams_%R"], label=f"Williams %R ({W_PERIOD})", color="purple"
+        df.index, df["RSI"], label=f"RSI ({RSI_PERIOD})", color="#457b9d", linewidth=1.2
     )
-    ax2.axhline(-20, color="red", linestyle=":", linewidth=1, label="超買 (-20)")
-    ax2.axhline(-80, color="green", linestyle=":", linewidth=1, label="超賣 (-80)")
-    ax2.set_ylabel("Williams %R")
-    ax2.set_ylim(-105, 5)
+    ax2.axhspan(0, RSI_OVERSOLD, color="#e63946", alpha=0.07)
+    ax2.axhspan(RSI_OVERBOUGHT, 100, color="#2a9d8f", alpha=0.07)
+    ax2.axhline(
+        RSI_OVERBOUGHT,
+        color="#2a9d8f",
+        linestyle=":",
+        linewidth=1,
+        label=f"過熱 ({RSI_OVERBOUGHT})",
+    )
+    ax2.axhline(
+        RSI_OVERSOLD,
+        color="#e63946",
+        linestyle=":",
+        linewidth=1,
+        label=f"超賣 ({RSI_OVERSOLD})",
+    )
+    ax2.axhline(50, color="gray", linestyle="-", linewidth=0.5)
+    ax2.set_ylabel("RSI")
+    ax2.set_ylim(0, 100)
     ax2.legend(loc="upper left")
     ax2.grid(True, alpha=0.4)
 
-    # ── 圖三：MACD ───────────────────────────────────
-    osc_colors = ["#e63946" if v >= 0 else "#2a9d8f" for v in df["MACD_OSC"]]
-    ax3.bar(df.index, df["MACD_OSC"], color=osc_colors, alpha=0.7, width=1, label="OSC")
-    ax3.plot(df.index, df["MACD_DIF"], label="DIF", color="blue", linewidth=1.2)
-    ax3.plot(df.index, df["MACD_DEA"], label="DEA", color="orange", linewidth=1.2)
-    ax3.axhline(0, color="gray", linestyle="-", linewidth=0.8)
-    ax3.set_ylabel("MACD")
+    # ── 圖三：Williams %R ────────────────────────────────
+    ax3.plot(
+        df.index,
+        df["Williams_%R"],
+        label=f"Williams %R ({W_PERIOD})",
+        color="purple",
+        linewidth=1.2,
+    )
+    ax3.axhspan(-100, WR_OVERSOLD, color="#e63946", alpha=0.07)
+    ax3.axhspan(WR_OVERBOUGHT, 0, color="#2a9d8f", alpha=0.07)
+    ax3.axhline(
+        WR_OVERBOUGHT,
+        color="#2a9d8f",
+        linestyle=":",
+        linewidth=1,
+        label=f"超買 ({WR_OVERBOUGHT})",
+    )
+    ax3.axhline(
+        WR_OVERSOLD,
+        color="#e63946",
+        linestyle=":",
+        linewidth=1,
+        label=f"超賣 ({WR_OVERSOLD})",
+    )
+    ax3.set_ylabel("Williams %R")
+    ax3.set_ylim(-105, 5)
     ax3.legend(loc="upper left")
     ax3.grid(True, alpha=0.4)
 
-    # ── 圖四：成交量分析 ─────────────────────────────
-    up_days = df["Close"] >= df["Open"]
-    bar_colors = ["#e63946" if u else "#2a9d8f" for u in up_days]
-    ax4.bar(
-        df.index, df["Volume"], color=bar_colors, alpha=0.7, width=1, label="成交量"
+    # ── 圖四：距 52 週高點跌幅 ──────────────────────────
+    dd = df["Drawdown"].fillna(0)
+    ax4.plot(df.index, dd, color="#264653", linewidth=1.2, label="距高點跌幅")
+    ax4.fill_between(
+        df.index,
+        dd,
+        0,
+        where=(dd <= DD_STRONG),
+        color="#e63946",
+        alpha=0.35,
+        label=f"積極加碼區（>{abs(DD_STRONG)}%）",
     )
-    ax4.plot(df.index, df["Vol_MA5"], label="MA5", color="orange", linewidth=1.2)
-    ax4.plot(df.index, df["Vol_MA20"], label="MA20", color="royalblue", linewidth=1.2)
-
-    high_vol = df[df["Vol_Ratio"] >= 2]
-    if not high_vol.empty:
-        ax4.scatter(
-            high_vol.index,
-            high_vol["Volume"],
-            color="darkred",
-            zorder=5,
-            s=20,
-            label="爆量 (量比≥2)",
-        )
-
-    ax4.set_ylabel("Volume")
+    ax4.fill_between(
+        df.index,
+        dd,
+        0,
+        where=(dd > DD_STRONG) & (dd <= DD_MILD),
+        color="#f4a261",
+        alpha=0.3,
+        label=f"考慮加碼區（{abs(DD_MILD)}~{abs(DD_STRONG)}%）",
+    )
+    ax4.fill_between(
+        df.index,
+        dd,
+        0,
+        where=(dd > DD_MILD) & (dd <= DD_NEAR_HIGH),
+        color="#aaaaaa",
+        alpha=0.15,
+        label=f"正常區（{abs(DD_NEAR_HIGH)}~{abs(DD_MILD)}%）",
+    )
+    ax4.fill_between(
+        df.index,
+        dd,
+        0,
+        where=(dd > DD_NEAR_HIGH),
+        color="#2a9d8f",
+        alpha=0.15,
+        label=f"接近高點（>{abs(DD_NEAR_HIGH)}%）",
+    )
+    ax4.axhline(DD_MILD, color="#f4a261", linestyle="--", linewidth=1)
+    ax4.axhline(DD_STRONG, color="#e63946", linestyle="--", linewidth=1)
+    ax4.axhline(DD_NEAR_HIGH, color="#2a9d8f", linestyle=":", linewidth=1)
+    ax4.axhline(0, color="gray", linewidth=0.5)
+    ax4.set_ylabel("距高點 (%)")
     ax4.set_xlabel("Date")
-    ax4.legend(loc="upper left")
+    ax4.legend(loc="lower left", fontsize=8)
     ax4.grid(True, alpha=0.4)
 
     plt.tight_layout()
 
-    out_path = f"{OUTPUT_DIR}/{_safe_id(stock_id)}.png"
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+    buf.seek(0)
+    img_bytes = buf.read()
+
+    out_path = os.path.join(OUTPUT_DIR, f"{_safe_id(stock_id)}.png")
+    with open(out_path, "wb") as f:
+        f.write(img_bytes)
     print(f"💾 已存檔：{out_path}")
 
+    return base64.b64encode(img_bytes).decode()
 
-def _build_stock_html(stock_id: str, df: pd.DataFrame) -> tuple[str, str]:
+
+def _build_stock_html(
+    stock_id: str, df: pd.DataFrame, signal_info: dict, img_b64: str = ""
+) -> tuple[str, str]:
     """回傳 (summary_row_html, chart_card_html)。"""
-    ret, n_days = calc_period_return(df)
-    ret_pct = f"{ret * 100:+.2f}%" if not pd.isna(ret) else "N/A"
-    ret_class = "up" if (not pd.isna(ret) and ret >= 0) else "dn"
+    overall = signal_info["overall"]
+    score = signal_info["score"]
+    signals = signal_info["signals"]
+    is_index = signal_info.get("is_index", False)
 
-    img_path = os.path.join(OUTPUT_DIR, f"{_safe_id(stock_id)}.png")
+    if is_index:
+        overall_cls = signal_info.get("overall_cls", "neutral")
+    else:
+        overall_cls = _OVERALL_CLASS.get(overall, "neutral")
+
     img_tag = ""
-    if os.path.exists(img_path):
-        with open(img_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        img_tag = (
-            f'<img src="data:image/png;base64,{b64}" alt="{stock_id}" loading="lazy">'
+    if img_b64:
+        img_tag = f'<img src="data:image/png;base64,{img_b64}" alt="{stock_id}" loading="lazy">'
+
+    if is_index:
+
+        def idx_td(key: str) -> str:
+            val, reason, _ = signals[key]
+            return f'<td class="neutral" title="{reason}">{val}</td>'
+
+        row = (
+            f"<tr>"
+            f'<td class="sid">{stock_id} <span class="index-badge">指數</span></td>'
+            f'<td class="{overall_cls} overall">{overall}</td>'
+            f"{idx_td('rsi')}"
+            f"{idx_td('drawdown')}"
+            f"{idx_td('ma60')}"
+            f"{idx_td('williams')}"
+            f"</tr>"
+        )
+    else:
+
+        def sig_td(key: str) -> str:
+            sig, reason, _ = signals[key]
+            cls = _SIG_CLASS.get(sig, "neutral")
+            return f'<td class="{cls}" title="{reason}">{sig}</td>'
+
+        row = (
+            f"<tr>"
+            f'<td class="sid">{stock_id}</td>'
+            f'<td class="{overall_cls} overall">{overall}&nbsp;({score:+d})</td>'
+            f"{sig_td('rsi')}"
+            f"{sig_td('drawdown')}"
+            f"{sig_td('ma60')}"
+            f"{sig_td('williams')}"
+            f"</tr>"
         )
 
-    row = (
-        f"<tr>"
-        f'<td class="sid">{stock_id}</td>'
-        f'<td class="{ret_class}">{ret_pct}</td>'
-        f"<td>{n_days} 天</td>"
-        f"</tr>"
-    )
     card = (
         f'<div class="card">'
         f'<div class="card-header">'
         f'<span class="sid">{stock_id}</span>'
-        f'<span class="ret {ret_class}">{ret_pct}</span>'
+        f'<span class="sig {overall_cls}">{overall}</span>'
         f"</div>"
         f"{img_tag}"
         f"</div>"
@@ -275,7 +522,7 @@ def _build_stock_html(stock_id: str, df: pd.DataFrame) -> tuple[str, str]:
     return row, card
 
 
-def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
+def generate_html_report(results: list[tuple[str, pd.DataFrame, dict, str]]):
     """生成自包含 HTML 報告（PNG 以 base64 內嵌），儲存至 docs/index.html。"""
     if not results:
         print("⚠️  沒有任何股票資料，跳過報告生成。")
@@ -285,7 +532,9 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
 
-    rows, cards = zip(*[_build_stock_html(sid, df) for sid, df in results])
+    rows, cards = zip(
+        *[_build_stock_html(sid, df, sig, b64) for sid, df, sig, b64 in results]
+    )
 
     html = (
         template.replace(
@@ -306,15 +555,20 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
 
 
 # ==========================================
-# 主程式：依序分析並儲存所有股票圖表
+# 主程式
 # ==========================================
 if __name__ == "__main__":
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        dfs = list(executor.map(analyze_stock, STOCK_LIST))
+
     results = []
-    for sid in STOCK_LIST:
-        df = analyze_stock(sid)
+    for sid, df in zip(STOCK_LIST, dfs):
         if df is not None:
-            plot_stock(sid, df)
-            results.append((sid, df))
+            signal_info = (
+                generate_index_context(df) if _is_index(sid) else generate_signal(df)
+            )
+            b64 = plot_stock(sid, df, signal_info)
+            results.append((sid, df, signal_info, b64))
 
     if results:
         generate_html_report(results)

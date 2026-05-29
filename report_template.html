@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ETF 技術指標報告</title>
+<title>ETF 定期投入時機分析</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f0f2f5;color:#222}
@@ -11,40 +11,95 @@ header{background:#16213e;color:#fff;padding:20px 32px}
 header h1{font-size:1.5rem;margin-bottom:4px}
 header p{font-size:.82rem;opacity:.65}
 .wrap{max-width:1440px;margin:0 auto;padding:24px 16px}
+
+/* 說明卡片 */
+.legend{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);padding:14px 20px;margin-bottom:20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.legend span{font-size:.82rem;font-weight:600;padding:3px 10px;border-radius:12px}
+.legend-label{font-size:.78rem;color:#888;margin-right:4px}
+.l-add-strong{color:#e63946;border:1.5px solid #e63946}
+.l-add{color:#f4a261;border:1.5px solid #f4a261}
+.l-neutral{color:#888;border:1.5px solid #ccc}
+.l-caution{color:#457b9d;border:1.5px solid #457b9d}
+.l-wait{color:#2a9d8f;border:1.5px solid #2a9d8f}
+
+/* 摘要表 */
 .summary{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;margin-bottom:28px}
 .summary h2{padding:12px 20px;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:#888;border-bottom:1px solid #f0f0f0}
 table{width:100%;border-collapse:collapse}
 th,td{padding:10px 20px;text-align:left;border-bottom:1px solid #f5f5f5;font-size:.88rem}
 th{color:#aaa;font-weight:500}
 td.sid{font-weight:600;font-family:monospace;font-size:.9rem}
-.up{color:#e63946;font-weight:700}
-.dn{color:#2a9d8f;font-weight:700}
+td.overall{font-size:.92rem}
+td[title]{cursor:help}
+
+/* 訊號顏色（台股慣例：紅=買機會，綠=過熱謹慎） */
+.add-strong{color:#e63946;font-weight:700}
+.add{color:#f4a261;font-weight:700}
+.neutral{color:#888888;font-weight:400}
+.caution{color:#457b9d;font-weight:600}
+.wait{color:#2a9d8f;font-weight:700}
+
+/* 圖表卡片 */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(620px,1fr));gap:20px}
 .card{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden}
 .card-header{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;background:#1a1a2e;color:#fff}
 .card-header .sid{font-weight:700;font-size:.95rem;font-family:monospace;letter-spacing:.03em}
-.card-header .ret{font-size:.95rem;font-weight:700}
+.card-header .sig{font-size:.95rem;font-weight:700}
+.card-header .add-strong{color:#ff6b7a}
+.card-header .add{color:#f4a261}
+.card-header .neutral{color:#aaa}
+.card-header .caution{color:#8ab4d4}
+.card-header .wait{color:#4ecdc4}
 .card img{width:100%;display:block}
+
 footer{text-align:center;padding:28px;color:#bbb;font-size:.78rem}
 footer a{color:#bbb}
-@media(max-width:680px){.grid{grid-template-columns:1fr}}
+.index-badge{font-size:.68rem;font-weight:400;color:#888;background:#f0f0f0;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle}
+.disclaimer{background:#fffbe6;border-left:3px solid #f4a261;border-radius:6px;padding:10px 16px;margin-bottom:20px;font-size:.79rem;color:#777;line-height:1.6}
+@media(max-width:680px){.grid{grid-template-columns:1fr}.legend{gap:8px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>ETF 技術指標分析報告</h1>
+  <h1>ETF 定期投入時機分析</h1>
   <p>更新時間：%%GENERATED_AT%% &nbsp;|&nbsp; 觀察區間：%%START_DATE%% ～ %%END_DATE%% &nbsp;|&nbsp; %%LOOKBACK_DAYS%% 天</p>
 </header>
 <div class="wrap">
+
+  <div class="disclaimer">
+    ⚠️ 本報告僅供個人參考，不構成任何投資建議。四項技術指標（RSI、距高點跌幅、MA60 偏差、Williams %R）均屬均值回歸類指標，彼此高度相關，請勿過度解讀綜合評分。<br>
+    標示「指數」者（^TWII、^DJI 等）無法直接買賣，僅顯示市場環境供參考；成交量比（量比）為當日量相對 20 日均量的倍數，僅作輔助觀察。投資前請自行評估風險。
+  </div>
+
+  <div class="legend">
+    <span class="legend-label">建議說明：</span>
+    <span class="l-add-strong">積極加碼</span>
+    <span class="l-add">考慮加碼</span>
+    <span class="l-neutral">正常定期投入</span>
+    <span class="l-caution">謹慎觀察</span>
+    <span class="l-wait">暫緩加碼</span>
+    <span class="legend-label" style="margin-left:8px">評分：-4（全部過熱）～ +5（距高點大幅回落＋全部超賣）｜滑鼠移至各指標欄可看詳細說明</span>
+  </div>
+
   <div class="summary">
-    <h2>期間報酬率摘要</h2>
+    <h2>加碼時機摘要</h2>
     <table>
-      <thead><tr><th>股票代號</th><th>期間報酬率</th><th>觀察天數</th></tr></thead>
+      <thead>
+        <tr>
+          <th>股票代號</th>
+          <th>綜合建議</th>
+          <th>RSI</th>
+          <th>距高點跌幅</th>
+          <th>MA60 偏差</th>
+          <th>Williams %R</th>
+        </tr>
+      </thead>
       <tbody>%%SUMMARY_ROWS%%</tbody>
     </table>
   </div>
+
   <div class="grid">%%CHART_CARDS%%</div>
 </div>
-<footer>由 GitHub Actions 自動產生 &nbsp;·&nbsp; <a href="https://github.com">ETF 技術指標分析工具</a></footer>
+<footer>由 GitHub Actions 自動產生 &nbsp;·&nbsp; <a href="https://github.com">ETF 定期投入時機分析工具</a></footer>
 </body>
 </html>

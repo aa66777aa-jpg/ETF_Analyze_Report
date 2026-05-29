@@ -70,7 +70,7 @@ def analyze_stock(stock_id: str):
     """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足則回傳 None。"""
     print(f"\n📥 正在下載：{stock_id} ...")
     df = yf.download(
-        stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=False
+        stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=True
     )
 
     if df.empty:
@@ -82,7 +82,7 @@ def analyze_stock(stock_id: str):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    # auto_adjust=False 時使用 Adj Close 計算指標，Volume 維持原始值對應 Yahoo Finance
+    # auto_adjust=True：Close 已還原（含股利、拆股），對應 Yahoo Finance 圖表價格
     price = df[_price_col(df)]
 
     # --- 威廉指標 (Williams %R) ---
@@ -168,7 +168,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
 
     # ── 圖一：股價 & BBI ─────────────────────────────
     col = _price_col(df)
-    ax1.plot(df.index, df[col], label="收盤價(還原)", color="black", linewidth=1.5)
+    ax1.plot(df.index, df[col], label="收盤價(調整後)", color="black", linewidth=1.5)
     ax1.plot(df.index, df["BBI"], label="BBI", color="orange", linestyle="--")
     ax1.set_ylabel("Price")
 

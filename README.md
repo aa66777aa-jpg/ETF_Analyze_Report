@@ -1,6 +1,14 @@
 # ETF 技術指標分析工具
 
-自動從 Yahoo Finance 下載股價資料，計算多種技術指標，並輸出圖表 PNG 檔案。
+自動從 Yahoo Finance 下載股價資料，計算多種技術指標，並輸出圖表與 HTML 報告。
+
+## 線上報告
+
+GitHub Pages 報告：
+
+> **https://&lt;your-username&gt;.github.io/&lt;repo-name&gt;/**
+
+> 啟用方式：GitHub repo → Settings → Pages → Source 選 `Deploy from a branch`，Branch 選 `main`，Folder 選 `/docs`
 
 ## 功能
 
@@ -10,15 +18,10 @@
 - **成交量分析**：MA5 / MA20 均量線，並標記爆量日（量比 ≥ 2）
 - 每支股票輸出一張四格子技術圖，標示期間報酬率
 
-## 範例輸出
+## 輸出
 
-圖檔存於 `Report/` 資料夾：
-
-| 台股 ETF | 美股指數 |
-|---|---|
-| `Report/009816_TW.png` | `Report/DJI.png` |
-| `Report/00935_TW.png` | `Report/GSPC.png` |
-| `Report/TWII.png` | `Report/IXIC.png` |
+- PNG 圖檔存於 `Report/` 資料夾
+- 自包含 HTML 報告存於 `docs/index.html`（圖片以 base64 內嵌，單一檔案即可離線查看）
 
 ## 安裝
 
@@ -82,11 +85,9 @@ W_PERIOD = 14         # 威廉指標回看天數
 - 美股指數：`^DJI`、`^GSPC`、`^IXIC`
 - 美股個股：`AAPL`、`TSLA`
 
-## 輸出
+## 圖表內容
 
-每支股票產生一個 PNG 圖檔，儲存於腳本所在目錄的 `Report/` 資料夾，檔名為股票代號（特殊字元替換為 `_`）。
-
-圖表包含四個子圖：
+每支股票產生一個四格子技術圖，圖表包含：
 
 1. 收盤價（還原）+ BBI 線，標示期間報酬率
 2. Williams %R，標示超買 / 超賣水平線

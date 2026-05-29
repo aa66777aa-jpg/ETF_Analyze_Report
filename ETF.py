@@ -1,21 +1,35 @@
+import base64
 import os
-import yfinance as yf
-import pandas as pd
-import matplotlib.pyplot as plt
+from datetime import date, datetime, timedelta
+
 import matplotlib
-from datetime import date, timedelta
+import matplotlib.font_manager as _fm
+import matplotlib.pyplot as plt
+import pandas as pd
+import yfinance as yf
+
+# 動態偵測系統上實際存在的 CJK 字體（解決 Ubuntu CI 的 TTC 解析不穩定問題）
+_CJK_KEYWORDS = ("NotoSansCJK", "wqy", "WenQuanYi", "NotoSans")
+for _fp in _fm.findSystemFonts():
+    if any(k.lower() in _fp.lower() for k in _CJK_KEYWORDS):
+        _fm.fontManager.addfont(_fp)
 
 matplotlib.rcParams["font.family"] = [
-    "Heiti TC",
+    "WenQuanYi Zen Hei",
+    "WenQuanYi Micro Hei",
     "Noto Sans CJK TC",
     "Noto Sans TC",
+    "Heiti TC",
     "Arial Unicode MS",
     "sans-serif",
 ]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Report")
+_BASE = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(_BASE, "Report")
+DOCS_DIR = os.path.join(_BASE, "docs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(DOCS_DIR, exist_ok=True)
 
 # ==========================================
 # ✏️  在這裡設定要觀察的股票清單
@@ -33,9 +47,20 @@ STOCK_LIST = [
 LOOKBACK_DAYS = 365  # 觀察天數
 WARMUP_DAYS = 60  # 多空指標回看天數
 W_PERIOD = 14  # 威廉指標回看天數
+BBI_PERIODS = (3, 6, 12, 24)  # BBI 均線參數
+VOL_MA_SHORT = 5  # 短期量均
+VOL_MA_LONG = 20  # 長期量均
 END_DATE = (date.today() + timedelta(days=1)).isoformat()
 START_DATE = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
 FETCH_START = (date.today() - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isoformat()
+
+
+def _safe_id(stock_id: str) -> str:
+    return stock_id.replace("^", "").replace(".", "_")
+
+
+def _price_col(df: pd.DataFrame) -> str:
+    return "Adj Close" if "Adj Close" in df.columns else "Close"
 
 
 def analyze_stock(stock_id: str):
@@ -57,7 +82,7 @@ def analyze_stock(stock_id: str):
             df.columns = df.columns.get_level_values(1)
 
     # auto_adjust=False 時使用 Adj Close 計算指標，Volume 維持原始值對應 Yahoo Finance
-    price = df["Adj Close"] if "Adj Close" in df.columns else df["Close"]
+    price = df[_price_col(df)]
 
     # --- 威廉指標 (Williams %R) ---
     high_n = df["High"].rolling(window=W_PERIOD).max()
@@ -65,11 +90,9 @@ def analyze_stock(stock_id: str):
     df["Williams_%R"] = ((high_n - price) / (high_n - low_n)) * -100
 
     # --- 多空指標 (BBI) ---
-    ma3 = price.rolling(window=3).mean()
-    ma6 = price.rolling(window=6).mean()
-    ma12 = price.rolling(window=12).mean()
-    ma24 = price.rolling(window=24).mean()
-    df["BBI"] = (ma3 + ma6 + ma12 + ma24) / 4
+    df["BBI"] = sum(price.rolling(window=p).mean() for p in BBI_PERIODS) / len(
+        BBI_PERIODS
+    )
 
     # --- MACD ---
     ema12 = price.ewm(span=12, adjust=False).mean()
@@ -79,9 +102,9 @@ def analyze_stock(stock_id: str):
     df["MACD_OSC"] = df["MACD_DIF"] - df["MACD_DEA"]
 
     # --- 成交量分析 ---
-    df["Vol_MA5"] = df["Volume"].rolling(window=5).mean()
-    df["Vol_MA20"] = df["Volume"].rolling(window=20).mean()
-    df["Vol_Ratio"] = df["Volume"] / df["Vol_MA20"]  # 量比（相對 20 日均量）
+    df["Vol_MA5"] = df["Volume"].rolling(window=VOL_MA_SHORT).mean()
+    df["Vol_MA20"] = df["Volume"].rolling(window=VOL_MA_LONG).mean()
+    df["Vol_Ratio"] = df["Volume"] / df["Vol_MA20"]  # 量比（相對長期均量）
 
     df.dropna(inplace=True)
 
@@ -101,9 +124,9 @@ def analyze_stock(stock_id: str):
 
 def calc_period_return(df: pd.DataFrame) -> tuple[float, int]:
     """計算觀察期間總報酬率與實際天數（使用還原後價格）。"""
-    price_col = "Adj Close" if "Adj Close" in df.columns else "Close"
-    first_close = df[price_col].iloc[0]
-    last_close = df[price_col].iloc[-1]
+    col = _price_col(df)
+    first_close = df[col].iloc[0]
+    last_close = df[col].iloc[-1]
     n_days = (df.index[-1] - df.index[0]).days
     if n_days <= 0:
         return float("nan"), 0
@@ -127,16 +150,13 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
     )
 
     # ── 圖一：股價 & BBI ─────────────────────────────
-    price_col = "Adj Close" if "Adj Close" in df.columns else "Close"
-    ax1.plot(
-        df.index, df[price_col], label="收盤價(還原)", color="black", linewidth=1.5
-    )
+    col = _price_col(df)
+    ax1.plot(df.index, df[col], label="收盤價(還原)", color="black", linewidth=1.5)
     ax1.plot(df.index, df["BBI"], label="BBI", color="orange", linestyle="--")
-    ax1.set_ylabel("Price (TWD)")
+    ax1.set_ylabel("Price")
 
-    # 年化報酬率標註
-    first_price = df[price_col].iloc[0]
-    last_price = df[price_col].iloc[-1]
+    first_price = df[col].iloc[0]
+    last_price = df[col].iloc[-1]
     ax1.annotate(
         f"期間報酬率：{period_ret_str}\n"
         f"期初：{first_price:.2f}  →  期末：{last_price:.2f}",
@@ -182,7 +202,6 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
     ax4.plot(df.index, df["Vol_MA5"], label="MA5", color="orange", linewidth=1.2)
     ax4.plot(df.index, df["Vol_MA20"], label="MA20", color="royalblue", linewidth=1.2)
 
-    # 量比 >= 2 的日期標上紅點（爆量）
     high_vol = df[df["Vol_Ratio"] >= 2]
     if not high_vol.empty:
         ax4.scatter(
@@ -201,25 +220,81 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
 
     plt.tight_layout()
 
-    safe_id = stock_id.replace("^", "").replace(".", "_")
-    out_path = f"{OUTPUT_DIR}/{safe_id}.png"
+    out_path = f"{OUTPUT_DIR}/{_safe_id(stock_id)}.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"💾 已存檔：{out_path}")
+
+
+def _build_stock_html(stock_id: str, df: pd.DataFrame) -> tuple[str, str]:
+    """回傳 (summary_row_html, chart_card_html)。"""
+    ret, n_days = calc_period_return(df)
+    ret_pct = f"{ret * 100:+.2f}%" if not pd.isna(ret) else "N/A"
+    ret_class = "up" if (not pd.isna(ret) and ret >= 0) else "dn"
+
+    img_path = os.path.join(OUTPUT_DIR, f"{_safe_id(stock_id)}.png")
+    img_tag = ""
+    if os.path.exists(img_path):
+        with open(img_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        img_tag = (
+            f'<img src="data:image/png;base64,{b64}" alt="{stock_id}" loading="lazy">'
+        )
+
+    row = (
+        f"<tr>"
+        f'<td class="sid">{stock_id}</td>'
+        f'<td class="{ret_class}">{ret_pct}</td>'
+        f"<td>{n_days} 天</td>"
+        f"</tr>"
+    )
+    card = (
+        f'<div class="card">'
+        f'<div class="card-header">'
+        f'<span class="sid">{stock_id}</span>'
+        f'<span class="ret {ret_class}">{ret_pct}</span>'
+        f"</div>"
+        f"{img_tag}"
+        f"</div>"
+    )
+    return row, card
+
+
+def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
+    """生成自包含 HTML 報告（PNG 以 base64 內嵌），儲存至 docs/index.html。"""
+    template_path = os.path.join(_BASE, "report_template.html")
+    with open(template_path, encoding="utf-8") as f:
+        template = f.read()
+
+    rows, cards = zip(*[_build_stock_html(sid, df) for sid, df in results])
+
+    html = (
+        template.replace("%%GENERATED_AT%%", datetime.now().strftime("%Y-%m-%d %H:%M"))
+        .replace("%%START_DATE%%", START_DATE)
+        .replace("%%END_DATE%%", END_DATE)
+        .replace("%%LOOKBACK_DAYS%%", str(LOOKBACK_DAYS))
+        .replace("%%SUMMARY_ROWS%%", "".join(rows))
+        .replace("%%CHART_CARDS%%", "".join(cards))
+    )
+
+    out_path = os.path.join(DOCS_DIR, "index.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"🌐 HTML 報告已生成：{out_path}")
 
 
 # ==========================================
 # 主程式：依序分析並儲存所有股票圖表
 # ==========================================
 if __name__ == "__main__":
-    success_count = 0
+    results = []
     for sid in STOCK_LIST:
         df = analyze_stock(sid)
         if df is not None:
-            ret, n_days = calc_period_return(df)
-            ret_str = f"{ret * 100:+.2f}% ({n_days}天)" if not pd.isna(ret) else "N/A"
-            print(f"   📈 期間報酬率：{ret_str}")
             plot_stock(sid, df)
-            success_count += 1
+            results.append((sid, df))
 
-    print(f"\n✅ 共成功儲存 {success_count} / {len(STOCK_LIST)} 支股票的圖表。")
+    if results:
+        generate_html_report(results)
+
+    print(f"\n✅ 共成功儲存 {len(results)} / {len(STOCK_LIST)} 支股票的圖表。")

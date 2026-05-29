@@ -14,6 +14,14 @@ for _fp in _fm.findSystemFonts():
     if any(k.lower() in _fp.lower() for k in _CJK_KEYWORDS):
         _fm.fontManager.addfont(_fp)
 
+import matplotlib.font_manager as _fm
+
+# 動態偵測系統上實際存在的 CJK 字體（解決 Ubuntu CI 的 TTC 解析不穩定問題）
+_CJK_KEYWORDS = ("NotoSansCJK", "wqy", "WenQuanYi", "NotoSans")
+for _fp in _fm.findSystemFonts():
+    if any(k.lower() in _fp.lower() for k in _CJK_KEYWORDS):
+        _fm.fontManager.addfont(_fp)
+
 matplotlib.rcParams["font.family"] = [
     "WenQuanYi Zen Hei",
     "WenQuanYi Micro Hei",

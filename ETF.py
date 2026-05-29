@@ -15,6 +15,8 @@ for _fp in _fm.findSystemFonts():
         _fm.fontManager.addfont(_fp)
 
 matplotlib.rcParams["font.family"] = [
+    "Microsoft JhengHei",   # Windows 繁體中文（微軟正黑體）
+    "Microsoft YaHei",      # Windows 簡體中文（微軟雅黑）
     "WenQuanYi Zen Hei",
     "WenQuanYi Micro Hei",
     "Noto Sans CJK TC",
@@ -75,11 +77,9 @@ def analyze_stock(stock_id: str):
         return None
 
     # 清理欄位多重索引（新版 yfinance 有時會產生多重索引）
+    # level 0 恆為 Price 名稱（Adj Close / Close / High…），直接取用
     if isinstance(df.columns, pd.MultiIndex):
-        if "Close" in df.columns.get_level_values(0):
-            df.columns = df.columns.get_level_values(0)
-        else:
-            df.columns = df.columns.get_level_values(1)
+        df.columns = df.columns.get_level_values(0)
 
     # auto_adjust=False 時使用 Adj Close 計算指標，Volume 維持原始值對應 Yahoo Finance
     price = df[_price_col(df)]
@@ -102,11 +102,22 @@ def analyze_stock(stock_id: str):
     df["MACD_OSC"] = df["MACD_DIF"] - df["MACD_DEA"]
 
     # --- 成交量分析 ---
+    # 部分指數（如 ^DJI、^TWII）Yahoo Finance 回報 Volume 為 NaN 或 0，
+    # 若不先填補，Vol_MA20=0 → Vol_Ratio=NaN/inf → dropna 會清空整個 df。
+    df["Volume"] = df["Volume"].fillna(0)
     df["Vol_MA5"] = df["Volume"].rolling(window=VOL_MA_SHORT).mean()
     df["Vol_MA20"] = df["Volume"].rolling(window=VOL_MA_LONG).mean()
     df["Vol_Ratio"] = df["Volume"] / df["Vol_MA20"]  # 量比（相對長期均量）
+    # 將除以 0 產生的 inf 轉為 NaN，再統一用 0 填補（量比無意義時視為 0）
+    df["Vol_Ratio"] = (
+        df["Vol_Ratio"]
+        .replace([float("inf"), float("-inf")], float("nan"))
+        .fillna(0)
+    )
 
-    df.dropna(inplace=True)
+    # dropna 排除 Vol_Ratio（已手動填補），僅對其餘指標欄位做清理
+    non_vol_cols = [c for c in df.columns if c != "Vol_Ratio"]
+    df.dropna(subset=non_vol_cols, inplace=True)
 
     if df.empty:
         print(f"⚠️  {stock_id} dropna 後無資料，跳過。")
@@ -140,7 +151,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
     period_ret_str = (
         f"{period_ret * 100:+.2f}% ({n_days}天)" if not pd.isna(period_ret) else "N/A"
     )
-    ann_ret_color = "red" if period_ret >= 0 else "green"
+    ann_ret_color = "#e63946" if period_ret >= 0 else "#2a9d8f"  # 台股慣例：漲紅跌綠
 
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(13, 14), sharex=True)
     fig.suptitle(
@@ -262,6 +273,10 @@ def _build_stock_html(stock_id: str, df: pd.DataFrame) -> tuple[str, str]:
 
 def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
     """生成自包含 HTML 報告（PNG 以 base64 內嵌），儲存至 docs/index.html。"""
+    if not results:
+        print("⚠️  沒有任何股票資料，跳過報告生成。")
+        return
+
     template_path = os.path.join(_BASE, "report_template.html")
     with open(template_path, encoding="utf-8") as f:
         template = f.read()

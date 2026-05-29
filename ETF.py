@@ -1,6 +1,6 @@
 import base64
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import matplotlib
 import matplotlib.font_manager as _fm
@@ -277,7 +277,7 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
     rows, cards = zip(*[_build_stock_html(sid, df) for sid, df in results])
 
     html = (
-        template.replace("%%GENERATED_AT%%", datetime.now().strftime("%Y-%m-%d %H:%M"))
+        template.replace("%%GENERATED_AT%%", datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"))
         .replace("%%START_DATE%%", START_DATE)
         .replace("%%END_DATE%%", END_DATE)
         .replace("%%LOOKBACK_DAYS%%", str(LOOKBACK_DAYS))

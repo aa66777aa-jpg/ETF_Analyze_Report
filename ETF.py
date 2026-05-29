@@ -52,7 +52,8 @@ W_PERIOD = 14  # 威廉指標回看天數
 BBI_PERIODS = (3, 6, 12, 24)  # BBI 均線參數
 VOL_MA_SHORT = 5  # 短期量均
 VOL_MA_LONG = 20  # 長期量均
-END_DATE = (date.today() + timedelta(days=1)).isoformat()
+TODAY = date.today().isoformat()
+END_DATE = (date.today() + timedelta(days=1)).isoformat()  # yfinance end is exclusive
 START_DATE = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
 FETCH_START = (date.today() - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isoformat()
 
@@ -151,11 +152,16 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
     period_ret_str = (
         f"{period_ret * 100:+.2f}% ({n_days}天)" if not pd.isna(period_ret) else "N/A"
     )
-    ann_ret_color = "#e63946" if period_ret >= 0 else "#2a9d8f"  # 台股慣例：漲紅跌綠
+    if pd.isna(period_ret):
+        ann_ret_color = "#888888"
+    elif period_ret >= 0:
+        ann_ret_color = "#e63946"  # 台股慣例：漲紅跌綠
+    else:
+        ann_ret_color = "#2a9d8f"
 
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(13, 14), sharex=True)
     fig.suptitle(
-        f"{stock_id}  技術指標分析  ({START_DATE} ~ {END_DATE})",
+        f"{stock_id}  技術指標分析  ({START_DATE} ~ {TODAY})",
         fontsize=14,
         fontweight="bold",
     )
@@ -289,7 +295,7 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
             datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"),
         )
         .replace("%%START_DATE%%", START_DATE)
-        .replace("%%END_DATE%%", END_DATE)
+        .replace("%%END_DATE%%", TODAY)
         .replace("%%LOOKBACK_DAYS%%", str(LOOKBACK_DAYS))
         .replace("%%SUMMARY_ROWS%%", "".join(rows))
         .replace("%%CHART_CARDS%%", "".join(cards))

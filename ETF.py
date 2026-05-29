@@ -15,8 +15,8 @@ for _fp in _fm.findSystemFonts():
         _fm.fontManager.addfont(_fp)
 
 matplotlib.rcParams["font.family"] = [
-    "Microsoft JhengHei",   # Windows 繁體中文（微軟正黑體）
-    "Microsoft YaHei",      # Windows 簡體中文（微軟雅黑）
+    "Microsoft JhengHei",  # Windows 繁體中文（微軟正黑體）
+    "Microsoft YaHei",  # Windows 簡體中文（微軟雅黑）
     "WenQuanYi Zen Hei",
     "WenQuanYi Micro Hei",
     "Noto Sans CJK TC",
@@ -63,14 +63,14 @@ def _safe_id(stock_id: str) -> str:
 
 
 def _price_col(df: pd.DataFrame) -> str:
-    return "Adj Close" if "Adj Close" in df.columns else "Close"
+    return "Close"
 
 
 def analyze_stock(stock_id: str):
     """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足則回傳 None。"""
     print(f"\n📥 正在下載：{stock_id} ...")
     df = yf.download(
-        stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=True
+        stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=False
     )
 
     if df.empty:
@@ -111,9 +111,7 @@ def analyze_stock(stock_id: str):
     df["Vol_Ratio"] = df["Volume"] / df["Vol_MA20"]  # 量比（相對長期均量）
     # 將除以 0 產生的 inf 轉為 NaN，再統一用 0 填補（量比無意義時視為 0）
     df["Vol_Ratio"] = (
-        df["Vol_Ratio"]
-        .replace([float("inf"), float("-inf")], float("nan"))
-        .fillna(0)
+        df["Vol_Ratio"].replace([float("inf"), float("-inf")], float("nan")).fillna(0)
     )
 
     # dropna 排除 Vol_Ratio（已手動填補），僅對其餘指標欄位做清理
@@ -168,7 +166,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame):
 
     # ── 圖一：股價 & BBI ─────────────────────────────
     col = _price_col(df)
-    ax1.plot(df.index, df[col], label="收盤價(調整後)", color="black", linewidth=1.5)
+    ax1.plot(df.index, df[col], label="收盤價", color="black", linewidth=1.5)
     ax1.plot(df.index, df["BBI"], label="BBI", color="orange", linestyle="--")
     ax1.set_ylabel("Price")
 

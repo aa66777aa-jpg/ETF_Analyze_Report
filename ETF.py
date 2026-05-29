@@ -14,8 +14,6 @@ for _fp in _fm.findSystemFonts():
     if any(k.lower() in _fp.lower() for k in _CJK_KEYWORDS):
         _fm.fontManager.addfont(_fp)
 
-import matplotlib.font_manager as _fm
-
 # 動態偵測系統上實際存在的 CJK 字體（解決 Ubuntu CI 的 TTC 解析不穩定問題）
 _CJK_KEYWORDS = ("NotoSansCJK", "wqy", "WenQuanYi", "NotoSans")
 for _fp in _fm.findSystemFonts():
@@ -277,7 +275,10 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame]]):
     rows, cards = zip(*[_build_stock_html(sid, df) for sid, df in results])
 
     html = (
-        template.replace("%%GENERATED_AT%%", datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"))
+        template.replace(
+            "%%GENERATED_AT%%",
+            datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M"),
+        )
         .replace("%%START_DATE%%", START_DATE)
         .replace("%%END_DATE%%", END_DATE)
         .replace("%%LOOKBACK_DAYS%%", str(LOOKBACK_DAYS))

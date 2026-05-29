@@ -247,12 +247,12 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     ma60_dev = float(latest["MA60_Dev"])
     wr = float(latest["Williams_%R"])
 
-    bull = sum([rsi > 60, drawdown > -5, ma60_dev > 3])
-    bear = sum([rsi < 45, drawdown <= -12, ma60_dev < -3])
+    bull = sum([rsi > 60, drawdown > DD_NEAR_HIGH, ma60_dev > 3, wr >= WR_OVERBOUGHT])
+    bear = sum([rsi < 45, drawdown <= DD_MILD, ma60_dev < -3, wr <= WR_OVERSOLD])
 
-    if bull >= 2:
+    if bull >= 3:
         env, env_cls = "偏多", "wait"
-    elif bear >= 2:
+    elif bear >= 3:
         env, env_cls = "偏空", "add"
     else:
         env, env_cls = "中性", "neutral"
@@ -329,7 +329,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
 
     # ── 成交量（副 y 軸，壓縮至圖底 20%）────────────────
     ax1v = ax1.twinx()
-    price_chg = df["Close"].diff()
+    price_chg = df["Close"].diff().fillna(0)
     vol_colors = ["#aec6e8" if c >= 0 else "#e8b4aa" for c in price_chg]
     ax1v.bar(df.index, df["Vol_Ratio"], color=vol_colors, alpha=0.28, width=1, zorder=0)
     ax1v.axhline(1.0, color="gray", linestyle=":", linewidth=0.6, alpha=0.5)
@@ -418,7 +418,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         df.index,
         dd,
         0,
-        where=(dd > DD_MILD) & (dd <= DD_NEAR_HIGH),
+        where=(dd > DD_MILD) & (dd < DD_NEAR_HIGH),
         color="#aaaaaa",
         alpha=0.15,
         label=f"正常區（{abs(DD_NEAR_HIGH)}~{abs(DD_MILD)}%）",
@@ -427,7 +427,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         df.index,
         dd,
         0,
-        where=(dd > DD_NEAR_HIGH),
+        where=(dd >= DD_NEAR_HIGH),
         color="#2a9d8f",
         alpha=0.15,
         label=f"接近高點（>{abs(DD_NEAR_HIGH)}%）",

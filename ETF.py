@@ -440,7 +440,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         where=(dd >= DD_NEAR_HIGH),
         color="#2a9d8f",
         alpha=0.15,
-        label=f"接近高點（>{abs(DD_NEAR_HIGH)}%）",
+        label=f"接近高點（<{abs(DD_NEAR_HIGH)}%）",
     )
     ax4.axhline(DD_MILD, color="#f4a261", linestyle="--", linewidth=1)
     ax4.axhline(DD_STRONG, color="#e63946", linestyle="--", linewidth=1)

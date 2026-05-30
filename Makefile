@@ -14,4 +14,4 @@ lint:
 	uvx ruff clean
 
 run:
-	uv run --with yfinance --with pandas --with matplotlib ./ETF.py
+	uv run python ETF.py

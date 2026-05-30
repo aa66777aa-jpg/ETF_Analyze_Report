@@ -6,7 +6,7 @@
 
 GitHub Pages 報告：
 
-> **https://&lt;your-username&gt;.github.io/&lt;repo-name&gt;/**
+> **https://aa66777aa-jpg.github.io/ETF_Analyze_Report/**
 
 > 啟用方式：GitHub repo → Settings → Pages → Source 選 `Deploy from a branch`，Branch 選 `main`，Folder 選 `/docs`
 
@@ -38,30 +38,42 @@ GitHub Pages 報告：
 
 ## 安裝
 
-```bash
-pip install -r requirements.txt
+本專案使用 [uv](https://docs.astral.sh/uv/) 管理依賴。
+
+**安裝 uv（第一次才需要）：**
+
+```powershell
+# Windows
+winget install astral-sh.uv
 ```
 
-或使用 `uv`：
-
 ```bash
-uv pip install -r requirements.txt
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**需求版本：**
+**安裝專案依賴：**
 
-| 套件 | 版本 |
-|---|---|
-| yfinance | ≥ 0.2.54 |
-| pandas | ≥ 2.0.0 |
-| matplotlib | ≥ 3.8.0 |
+```bash
+uv sync
+```
+
+執行後會自動建立 `.venv` 並安裝所有套件，不需要手動 `pip install`。
 
 ## 使用方式
 
-### 直接執行
+### 執行分析
 
 ```bash
-python ETF.py
+uv run ETF.py
+```
+
+> 不需要先 activate 虛擬環境，`uv run` 會自動使用 `.venv`。
+
+### 新增套件
+
+```bash
+uv add <套件名>
 ```
 
 ### 使用 Makefile（含 lint & format）

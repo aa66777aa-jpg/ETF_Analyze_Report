@@ -98,7 +98,15 @@ def _is_index(stock_id: str) -> bool:
 
 
 def analyze_stock(stock_id: str):
-    """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足則回傳 None。"""
+    """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足或發生錯誤則回傳 None。"""
+    try:
+        return _analyze_stock_impl(stock_id)
+    except Exception as exc:
+        print(f"❌ {stock_id} 發生未預期錯誤，已跳過：{exc}")
+        return None
+
+
+def _analyze_stock_impl(stock_id: str):
     print(f"\n📥 正在下載：{stock_id} ...")
     df = yf.download(
         stock_id, start=FETCH_START, end=END_DATE, progress=False, auto_adjust=True
@@ -140,7 +148,8 @@ def analyze_stock(stock_id: str):
     # --- 威廉指標 (Williams %R) ---
     high_n = df["High"].rolling(window=W_PERIOD).max()
     low_n = df["Low"].rolling(window=W_PERIOD).min()
-    df["Williams_%R"] = ((high_n - price) / (high_n - low_n)) * -100
+    range_n = (high_n - low_n).replace(0, float("nan"))  # 橫盤無波動時避免除以零
+    df["Williams_%R"] = ((high_n - price) / range_n) * -100
 
     # --- 成交量比率（相對 20 日均量）---
     df["Vol_MA20"] = df["Volume"].rolling(window=20, min_periods=5).mean()
@@ -267,7 +276,7 @@ def generate_index_context(df: pd.DataFrame) -> dict:
             "rsi": (f"RSI {rsi:.0f}", f"RSI={rsi:.1f}", 0),
             "drawdown": (f"{drawdown:.1f}%", f"距高點跌幅={drawdown:.1f}%", 0),
             "ma60": (f"MA60 {ma60_dev:+.1f}%", f"MA60偏差={ma60_dev:.1f}%", 0),
-            "williams": (f"W%R {wr:.0f}", f"Williams %%R={wr:.1f}", 0),
+            "williams": (f"W%R {wr:.0f}", f"Williams %R={wr:.1f}", 0),
         },
     }
 
@@ -300,14 +309,15 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         linewidth=1.2,
         linestyle="--",
     )
-    ax1.plot(
-        df.index,
-        df["MA120"],
-        label="MA120",
-        color="#264653",
-        linewidth=1.2,
-        linestyle="--",
-    )
+    if df["MA120"].notna().any():
+        ax1.plot(
+            df.index,
+            df["MA120"],
+            label="MA120",
+            color="#264653",
+            linewidth=1.2,
+            linestyle="--",
+        )
     ax1.set_ylabel("Price")
     ann_text = (
         f"{overall}\n最新收盤：{last_price:.2f}"
@@ -529,6 +539,9 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame, dict, str]]):
         return
 
     template_path = os.path.join(_BASE, "report_template.html")
+    if not os.path.exists(template_path):
+        print(f"❌ 找不到報告範本：{template_path}，跳過 HTML 生成。")
+        return
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
 

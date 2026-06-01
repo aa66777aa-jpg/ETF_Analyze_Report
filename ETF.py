@@ -153,7 +153,7 @@ def _analyze_stock_impl(stock_id: str):
 
     # --- 成交量比率（相對 20 日均量）---
     df["Vol_MA20"] = df["Volume"].rolling(window=20, min_periods=5).mean()
-    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"]).fillna(1.0)
+    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"].replace(0, float("nan"))).fillna(1.0)
 
     # MA120 不列入必要欄位，讓成立未滿 120 天的 ETF 也能繼續分析
     df = df.dropna(subset=["RSI", "MA60", "Williams_%R"])
@@ -217,7 +217,7 @@ def generate_signal(df: pd.DataFrame) -> dict:
     # --- 價格 vs MA60 ---
     ma60_dev = float(latest["MA60_Dev"])
     if ma60_dev <= MA60_LOW:
-        signals["ma60"] = ("加碼", f"低於 MA60 {ma60_dev:.1f}%（均線下方）", 1)
+        signals["ma60"] = ("加碼", f"低於 MA60 {abs(ma60_dev):.1f}%（均線下方）", 1)
     elif ma60_dev >= MA60_HIGH:
         signals["ma60"] = ("暫緩", f"高於 MA60 +{ma60_dev:.1f}%（過度延伸）", -1)
     else:
@@ -256,7 +256,7 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     ma60_dev = float(latest["MA60_Dev"])
     wr = float(latest["Williams_%R"])
 
-    bull = sum([rsi > 60, drawdown > DD_NEAR_HIGH, ma60_dev > 3, wr >= WR_OVERBOUGHT])
+    bull = sum([rsi > 60, drawdown >= DD_NEAR_HIGH, ma60_dev > 3, wr >= WR_OVERBOUGHT])
     bear = sum([rsi < 45, drawdown <= DD_MILD, ma60_dev < -3, wr <= WR_OVERSOLD])
 
     if bull >= 3:
@@ -454,8 +454,10 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
     plt.tight_layout()
 
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    try:
+        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    finally:
+        plt.close(fig)
 
     buf.seek(0)
     img_bytes = buf.read()

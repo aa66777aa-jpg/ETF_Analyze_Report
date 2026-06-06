@@ -92,7 +92,7 @@ make all    # lint 後接著 run
 # 要觀察的股票清單（Yahoo Finance 代號）
 STOCK_LIST = [
     "009816.TW",    # 台股 ETF
-    "00735.TW",     # 台股 ETF
+    "EWY",          # 美股 ETF（南韓指數 ETF）
     "^TWII",        # 加權指數
     "^DJI",         # 道瓊
     "^GSPC",        # S&P 500
@@ -106,7 +106,7 @@ W_PERIOD = 14         # Williams %R 回看天數
 ```
 
 股票代號格式參考 Yahoo Finance：
-- 台股 ETF：`00735.TW`
+- 美股 ETF：`EWY`
 - 台股個股：`2330.TW`
 - 美股指數：`^DJI`、`^GSPC`、`^IXIC`
 - 美股個股：`AAPL`、`TSLA`

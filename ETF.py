@@ -40,7 +40,7 @@ os.makedirs(DOCS_DIR, exist_ok=True)
 # ==========================================
 STOCK_LIST = [
     "009816.TW",
-    "00735.TW",
+    "EWY",
     "^TWII",
     "^DJI",
     "^GSPC",
@@ -153,7 +153,9 @@ def _analyze_stock_impl(stock_id: str):
 
     # --- 成交量比率（相對 20 日均量）---
     df["Vol_MA20"] = df["Volume"].rolling(window=20, min_periods=5).mean()
-    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"].replace(0, float("nan"))).fillna(1.0)
+    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"].replace(0, float("nan"))).fillna(
+        1.0
+    )
 
     # MA120 不列入必要欄位，讓成立未滿 120 天的 ETF 也能繼續分析
     df = df.dropna(subset=["RSI", "MA60", "Williams_%R"])

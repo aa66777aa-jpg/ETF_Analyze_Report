@@ -42,7 +42,7 @@ STOCK_LIST = [
     "009816.TW",
     "EWY",
     "^TWII",
-    "^DJI",
+    "^KS11",
     "^GSPC",
     "^IXIC",
     # 繼續新增你想觀察的股票代號...

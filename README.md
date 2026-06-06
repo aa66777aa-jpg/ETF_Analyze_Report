@@ -94,7 +94,7 @@ STOCK_LIST = [
     "009816.TW",    # 台股 ETF
     "EWY",          # 美股 ETF（南韓指數 ETF）
     "^TWII",        # 加權指數
-    "^DJI",         # 道瓊
+    "^KS11",        # 韓國綜合股價指數
     "^GSPC",        # S&P 500
     "^IXIC",        # 那斯達克
 ]
@@ -108,7 +108,8 @@ W_PERIOD = 14         # Williams %R 回看天數
 股票代號格式參考 Yahoo Finance：
 - 美股 ETF：`EWY`
 - 台股個股：`2330.TW`
-- 美股指數：`^DJI`、`^GSPC`、`^IXIC`
+- 韓國指數：`^KS11`
+- 美股指數：`^GSPC`、`^IXIC`
 - 美股個股：`AAPL`、`TSLA`
 
 ## 圖表內容

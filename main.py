@@ -51,6 +51,7 @@ LOOKBACK_DAYS = 365  # 顯示的觀察天數
 WARMUP_DAYS = 180  # 預先多抓的資料天數（確保 MA120 有足夠暖機）
 RSI_PERIOD = 14  # RSI 回看天數
 W_PERIOD = 14  # 威廉指標回看天數
+MIN_TRADING_DAYS = 120  # 觀察區間最少交易日，不足則跳過
 MA_PERIODS = (20, 60, 120)  # 移動均線參數
 HIGH_WINDOW = 252  # 52 週高點視窗（約 1 年交易日）
 
@@ -133,7 +134,7 @@ def _analyze_stock_impl(stock_id: str):
     rs = avg_gain / avg_loss
     df["RSI"] = 100 - (100 / (1 + rs))
 
-    # --- 移動均線（min_periods=半週期，讓成立未滿的 ETF 也能部分計算）---
+    # --- 移動均線（min_periods=半週期，MA120 NaN 的資料列會在 dropna 時被過濾）---
     for p in MA_PERIODS:
         df[f"MA{p}"] = price.rolling(window=p, min_periods=max(p // 2, 10)).mean()
 
@@ -147,7 +148,11 @@ def _analyze_stock_impl(stock_id: str):
     # --- 威廉指標 (Williams %R) ---
     high_n = df["High"].rolling(window=W_PERIOD).max()
     low_n = df["Low"].rolling(window=W_PERIOD).min()
-    range_n = (high_n - low_n).replace(0, float("nan"))  # 橫盤無波動時避免除以零
+    range_n = high_n - low_n
+    # 區間小於收盤價 0.3%（或恰為零）時視為橫盤，設 NaN 避免誤判
+    range_n = range_n.where(
+        range_n / price.replace(0, float("nan")) >= 0.003, float("nan")
+    )
     df["Williams_%R"] = ((high_n - price) / range_n) * -100
 
     # --- 成交量比率（相對 20 日均量）---
@@ -156,17 +161,25 @@ def _analyze_stock_impl(stock_id: str):
         1.0
     )
 
-    # MA120 不列入必要欄位，讓成立未滿 120 天的 ETF 也能繼續分析
-    df = df.dropna(subset=["RSI", "MA60", "Williams_%R"])
+    # Williams_%R 橫盤時可為 NaN，不列入必要欄位
+    # MA120 min_periods=60，成立未滿 60 個交易日的 ETF 在此被過濾
+    df = df.dropna(subset=["RSI", "MA60", "MA120", "Drawdown"])
 
     if df.empty:
-        print(f"⚠️  {stock_id} dropna 後無資料，跳過。")
+        print(f"⚠️  {stock_id} dropna 後無資料（歷史資料不足），跳過。")
         return None
 
+    df.attrs["total_history_days"] = len(df)  # RSI/MA 計算後的有效交易日數
     df = df[df.index >= pd.Timestamp(START_DATE)]
 
     if df.empty:
         print(f"⚠️  {stock_id} 截回觀察區間後無資料，跳過。")
+        return None
+
+    if len(df) < MIN_TRADING_DAYS:
+        print(
+            f"⚠️  {stock_id} 觀察區間僅 {len(df)} 個交易日，不足 {MIN_TRADING_DAYS} 天，跳過。"
+        )
         return None
 
     return df
@@ -191,6 +204,7 @@ def generate_signal(df: pd.DataFrame) -> dict:
     最高分：+5（距高點明顯回落 +2，其餘三項均 +1）
     最低分：-4（四項指標均 -1）
     """
+    total_days = df.attrs.get("total_history_days", len(df))
     latest = df.iloc[-1]
     price = float(latest["Close"])
     signals = {}
@@ -204,34 +218,63 @@ def generate_signal(df: pd.DataFrame) -> dict:
     else:
         signals["rsi"] = ("正常", f"中性（RSI {rsi:.1f}）", 0)
 
-    # --- 距 52 週高點跌幅（明顯回落 +2 分，有所回落 +1 分） ---
+    # --- 距 52 週高點跌幅（高點視窗不足時加註說明） ---
     drawdown = float(latest["Drawdown"])
+    dd_note = f"，高點視窗僅 {total_days} 日" if total_days < HIGH_WINDOW else ""
     if drawdown <= DD_STRONG:
-        signals["drawdown"] = ("加碼", f"距高點 {drawdown:.1f}%（明顯回落）", 2)
+        signals["drawdown"] = (
+            "加碼",
+            f"距高點 {drawdown:.1f}%（明顯回落{dd_note}）",
+            2,
+        )
     elif drawdown <= DD_MILD:
-        signals["drawdown"] = ("加碼", f"距高點 {drawdown:.1f}%（有所回落）", 1)
+        signals["drawdown"] = (
+            "加碼",
+            f"距高點 {drawdown:.1f}%（有所回落{dd_note}）",
+            1,
+        )
     elif drawdown >= DD_NEAR_HIGH:
-        signals["drawdown"] = ("暫緩", f"距高點僅 {drawdown:.1f}%（接近高點）", -1)
+        signals["drawdown"] = (
+            "暫緩",
+            f"距高點僅 {drawdown:.1f}%（接近高點{dd_note}）",
+            -1,
+        )
     else:
-        signals["drawdown"] = ("正常", f"距高點 {drawdown:.1f}%", 0)
+        signals["drawdown"] = ("正常", f"距高點 {drawdown:.1f}%{dd_note}", 0)
 
-    # --- 價格 vs MA60 ---
+    # --- 價格 vs MA60（含斜率方向過濾） ---
     ma60_dev = float(latest["MA60_Dev"])
+    ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-20])
     if ma60_dev <= MA60_LOW:
-        signals["ma60"] = ("加碼", f"低於 MA60 {abs(ma60_dev):.1f}%（均線下方）", 1)
+        if ma60_slope > 0:
+            signals["ma60"] = (
+                "加碼",
+                f"低於 MA60 {abs(ma60_dev):.1f}%（均線向上，回檔加碼）",
+                1,
+            )
+        else:
+            signals["ma60"] = (
+                "正常",
+                f"低於 MA60 {abs(ma60_dev):.1f}%（均線下彎，謹慎觀察）",
+                0,
+            )
     elif ma60_dev >= MA60_HIGH:
         signals["ma60"] = ("暫緩", f"高於 MA60 +{ma60_dev:.1f}%（過度延伸）", -1)
     else:
         signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
 
-    # --- Williams %R ---
-    wr = float(latest["Williams_%R"])
-    if wr <= WR_OVERSOLD:
-        signals["williams"] = ("加碼", f"超賣（{wr:.1f}）", 1)
-    elif wr >= WR_OVERBOUGHT:
-        signals["williams"] = ("暫緩", f"超買（{wr:.1f}）", -1)
+    # --- Williams %R（橫盤無波動時 NaN，視為中性） ---
+    wr_raw = latest["Williams_%R"]
+    if pd.isna(wr_raw):
+        signals["williams"] = ("正常", "橫盤無波動（W%R 無法計算）", 0)
     else:
-        signals["williams"] = ("正常", f"中性（{wr:.1f}）", 0)
+        wr = float(wr_raw)
+        if wr <= WR_OVERSOLD:
+            signals["williams"] = ("加碼", f"超賣（{wr:.1f}）", 1)
+        elif wr >= WR_OVERBOUGHT:
+            signals["williams"] = ("暫緩", f"超買（{wr:.1f}）", -1)
+        else:
+            signals["williams"] = ("正常", f"中性（{wr:.1f}）", 0)
 
     score = sum(v[2] for v in signals.values())
 
@@ -246,7 +289,12 @@ def generate_signal(df: pd.DataFrame) -> dict:
     else:
         overall = "暫緩加碼"
 
-    return {"signals": signals, "score": score, "overall": overall, "price": price}
+    return {
+        "signals": signals,
+        "score": score,
+        "overall": overall,
+        "price": price,
+    }
 
 
 def generate_index_context(df: pd.DataFrame) -> dict:
@@ -255,7 +303,8 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     rsi = float(latest["RSI"])
     drawdown = float(latest["Drawdown"])
     ma60_dev = float(latest["MA60_Dev"])
-    wr = float(latest["Williams_%R"])
+    wr_raw = latest["Williams_%R"]
+    wr = float(wr_raw) if not pd.isna(wr_raw) else -50.0  # NaN 時視為中性
 
     bull = sum([rsi > 60, drawdown >= DD_NEAR_HIGH, ma60_dev > 3, wr >= WR_OVERBOUGHT])
     bear = sum([rsi < 45, drawdown <= DD_MILD, ma60_dev < -3, wr <= WR_OVERSOLD])
@@ -267,6 +316,11 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     else:
         env, env_cls = "中性", "neutral"
 
+    wr_display = f"W%R {wr:.0f}" if not pd.isna(wr_raw) else "W%R 橫盤"
+    wr_reason = (
+        f"Williams %R={wr:.1f}" if not pd.isna(wr_raw) else "Williams %R 橫盤無法計算"
+    )
+
     return {
         "is_index": True,
         "overall": f"市場環境：{env}",
@@ -277,7 +331,7 @@ def generate_index_context(df: pd.DataFrame) -> dict:
             "rsi": (f"RSI {rsi:.0f}", f"RSI={rsi:.1f}", 0),
             "drawdown": (f"{drawdown:.1f}%", f"距高點跌幅={drawdown:.1f}%", 0),
             "ma60": (f"MA60 {ma60_dev:+.1f}%", f"MA60偏差={ma60_dev:.1f}%", 0),
-            "williams": (f"W%R {wr:.0f}", f"Williams %R={wr:.1f}", 0),
+            "williams": (wr_display, wr_reason, 0),
         },
     }
 
@@ -310,21 +364,19 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         linewidth=1.2,
         linestyle="--",
     )
-    if df["MA120"].notna().any():
-        ax1.plot(
-            df.index,
-            df["MA120"],
-            label="MA120",
-            color="#264653",
-            linewidth=1.2,
-            linestyle="--",
-        )
-    ax1.set_ylabel("Price")
-    ann_text = (
-        f"{overall}\n最新收盤：{last_price:.2f}"
-        if is_index
-        else f"建議：{overall}（{score:+d} 分）\n最新收盤：{last_price:.2f}"
+    ax1.plot(
+        df.index,
+        df["MA120"],
+        label="MA120",
+        color="#264653",
+        linewidth=1.2,
+        linestyle="--",
     )
+    ax1.set_ylabel("Price")
+    if is_index:
+        ann_text = f"{overall}\n最新收盤：{last_price:.2f}"
+    else:
+        ann_text = f"建議：{overall}（{score:+d} 分）\n最新收盤：{last_price:.2f}"
     ax1.annotate(
         ann_text,
         xy=(df.index[-1], last_price),
@@ -405,7 +457,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
     ax3.grid(True, alpha=0.4)
 
     # ── 圖四：距 52 週高點跌幅 ──────────────────────────
-    dd = df["Drawdown"].fillna(0)
+    dd = df["Drawdown"]
     ax4.plot(df.index, dd, color="#264653", linewidth=1.2, label="距高點跌幅")
     ax4.fill_between(
         df.index,
@@ -472,7 +524,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
 
 
 def _build_stock_html(
-    stock_id: str, df: pd.DataFrame, signal_info: dict, img_b64: str = ""
+    stock_id: str, signal_info: dict, img_b64: str = ""
 ) -> tuple[str, str]:
     """回傳 (summary_row_html, chart_card_html)。"""
     overall = signal_info["overall"]
@@ -512,10 +564,11 @@ def _build_stock_html(
             cls = _SIG_CLASS.get(sig, "neutral")
             return f'<td class="{cls}" title="{reason}">{sig}</td>'
 
+        score_suffix = f"&nbsp;({score:+d})"
         row = (
             f"<tr>"
             f'<td class="sid">{stock_id}</td>'
-            f'<td class="{overall_cls} overall">{overall}&nbsp;({score:+d})</td>'
+            f'<td class="{overall_cls} overall">{overall}{score_suffix}</td>'
             f"{sig_td('rsi')}"
             f"{sig_td('drawdown')}"
             f"{sig_td('ma60')}"
@@ -535,7 +588,7 @@ def _build_stock_html(
     return row, card
 
 
-def generate_html_report(results: list[tuple[str, pd.DataFrame, dict, str]]):
+def generate_html_report(results: list[tuple[str, dict, str]]):
     """生成自包含 HTML 報告（PNG 以 base64 內嵌），儲存至 docs/index.html。"""
     if not results:
         print("⚠️  沒有任何股票資料，跳過報告生成。")
@@ -548,9 +601,17 @@ def generate_html_report(results: list[tuple[str, pd.DataFrame, dict, str]]):
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
 
-    rows, cards = zip(
-        *[_build_stock_html(sid, df, sig, b64) for sid, df, sig, b64 in results]
-    )
+    # 將外部 CSS 內嵌，確保 docs/index.html 自包含
+    css_path = os.path.join(_BASE, "report.css")
+    if os.path.exists(css_path):
+        with open(css_path, encoding="utf-8") as f:
+            css_content = f.read()
+        template = template.replace(
+            '<link rel="stylesheet" href="report.css">',
+            f"<style>\n{css_content}\n</style>",
+        )
+
+    rows, cards = zip(*[_build_stock_html(sid, sig, b64) for sid, sig, b64 in results])
 
     html = (
         template.replace(
@@ -584,7 +645,7 @@ if __name__ == "__main__":
                 generate_index_context(df) if _is_index(sid) else generate_signal(df)
             )
             b64 = plot_stock(sid, df, signal_info)
-            results.append((sid, df, signal_info, b64))
+            results.append((sid, signal_info, b64))
 
     if results:
         generate_html_report(results)

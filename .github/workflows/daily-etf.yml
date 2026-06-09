@@ -37,7 +37,7 @@ jobs:
         run: uv run python -c "import matplotlib, shutil; shutil.rmtree(matplotlib.get_cachedir(), ignore_errors=True)"
 
       - name: Run ETF analysis
-        run: uv run python ETF.py
+        run: uv run python main.py
 
       - name: Commit updated charts
         run: |

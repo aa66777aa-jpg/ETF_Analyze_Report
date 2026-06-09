@@ -4,10 +4,10 @@ help:
 	@echo "Available targets:"
 	@echo "  all    - Run lint then run"
 	@echo "  lint   - Check and format code with ruff, then clean cache"
-	@echo "  run    - Execute ETF.py"
+	@echo "  run    - Execute main.py"
 	@echo "  update - Update uv itself"
 
-all: lint run
+all: update lint run
 
 lint:
 	uvx ruff check --fix .
@@ -18,4 +18,4 @@ update:
 	uv self update
 
 run:
-	uv run python ETF.py
+	uv run python main.py

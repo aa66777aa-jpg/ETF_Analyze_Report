@@ -6,4 +6,5 @@ dependencies = [
     "yfinance>=0.2.54",
     "pandas>=2.0.0",
     "matplotlib>=3.8.0",
+    "curl-cffi>=0.7",
 ]

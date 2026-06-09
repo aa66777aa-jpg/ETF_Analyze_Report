@@ -13,7 +13,6 @@ lint:
 	uvx ruff check --fix .
 	uvx ruff format .
 	uvx ruff clean
-	uv cache clean
 
 update:
 	uv self update

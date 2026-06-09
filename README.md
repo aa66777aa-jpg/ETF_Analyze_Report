@@ -65,7 +65,7 @@ uv sync
 ### 執行分析
 
 ```bash
-uv run ETF.py
+uv run python ETF.py
 ```
 
 > 不需要先 activate 虛擬環境，`uv run` 會自動使用 `.venv`。
@@ -79,9 +79,10 @@ uv add <套件名>
 ### 使用 Makefile（含 lint & format）
 
 ```bash
-make lint   # ruff 檢查並格式化
+make lint   # ruff 檢查、格式化並清除 cache
 make run    # 執行 ETF.py（透過 uv 自動安裝相依套件）
 make all    # lint 後接著 run
+make update # 更新 uv 本身
 ```
 
 ## 設定

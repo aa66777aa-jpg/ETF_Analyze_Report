@@ -1,0 +1,52 @@
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f0f2f5;color:#222}
+header{background:#16213e;color:#fff;padding:20px 32px}
+header h1{font-size:1.5rem;margin-bottom:4px}
+header p{font-size:.82rem;opacity:.65}
+.wrap{max-width:1440px;margin:0 auto;padding:24px 16px}
+
+/* 說明卡片 */
+.legend{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);padding:14px 20px;margin-bottom:20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.legend span{font-size:.82rem;font-weight:600;padding:3px 10px;border-radius:12px}
+.legend-label{font-size:.78rem;color:#888;margin-right:4px}
+.l-add-strong{color:#e63946;border:1.5px solid #e63946}
+.l-add{color:#f4a261;border:1.5px solid #f4a261}
+.l-neutral{color:#888;border:1.5px solid #ccc}
+.l-caution{color:#457b9d;border:1.5px solid #457b9d}
+.l-wait{color:#2a9d8f;border:1.5px solid #2a9d8f}
+
+/* 摘要表 */
+.summary{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;margin-bottom:28px}
+.summary h2{padding:12px 20px;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:#888;border-bottom:1px solid #f0f0f0}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 20px;text-align:left;border-bottom:1px solid #f5f5f5;font-size:.88rem}
+th{color:#aaa;font-weight:500}
+td.sid{font-weight:600;font-family:monospace;font-size:.9rem}
+td.overall{font-size:.92rem}
+td[title]{cursor:help}
+
+/* 訊號顏色（台股慣例：紅=買機會，綠=過熱謹慎） */
+.add-strong{color:#e63946;font-weight:700}
+.add{color:#f4a261;font-weight:700}
+.neutral{color:#888888;font-weight:400}
+.caution{color:#457b9d;font-weight:600}
+.wait{color:#2a9d8f;font-weight:700}
+
+/* 圖表卡片 */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(620px,1fr));gap:20px}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden}
+.card-header{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;background:#1a1a2e;color:#fff}
+.card-header .sid{font-weight:700;font-size:.95rem;font-family:monospace;letter-spacing:.03em}
+.card-header .sig{font-size:.95rem;font-weight:700}
+.card-header .add-strong{color:#ff6b7a}
+.card-header .add{color:#f4a261}
+.card-header .neutral{color:#aaa}
+.card-header .caution{color:#8ab4d4}
+.card-header .wait{color:#4ecdc4}
+.card img{width:100%;display:block}
+
+footer{text-align:center;padding:28px;color:#bbb;font-size:.78rem}
+footer a{color:#bbb}
+.index-badge{font-size:.68rem;font-weight:400;color:#888;background:#f0f0f0;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle}
+.disclaimer{background:#fffbe6;border-left:3px solid #f4a261;border-radius:6px;padding:10px 16px;margin-bottom:20px;font-size:.79rem;color:#777;line-height:1.6}
+@media(max-width:680px){.grid{grid-template-columns:1fr}.legend{gap:8px}}

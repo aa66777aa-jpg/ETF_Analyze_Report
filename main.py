@@ -40,7 +40,7 @@ os.makedirs(DOCS_DIR, exist_ok=True)
 # ==========================================
 STOCK_LIST = [
     "009816.TW",
-    "00631L.TW",
+    "00685L.TW",
     "EWY",
     "^TWII",
     "^GSPC",

@@ -98,8 +98,8 @@ make update # 更新 uv 本身
 ```python
 # 要觀察的股票清單（Yahoo Finance 代號）
 STOCK_LIST = [
-    "009816.TW",    # 台股 ETF
-    "00631L.TW",    # 台灣 50 正 2
+    "009816.TW",    # 凱基台灣TOP50
+    "00685L.TW",    # 群益臺灣加權正2
     "EWY",          # iShares MSCI 南韓 ETF（美股）
     "^TWII",        # 加權指數（市場環境參考）
     "^GSPC",        # S&P 500（市場環境參考）

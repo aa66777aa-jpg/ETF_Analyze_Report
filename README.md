@@ -100,11 +100,9 @@ make update # 更新 uv 本身
 STOCK_LIST = [
     "009816.TW",    # 凱基台灣TOP50
     "00685L.TW",    # 群益臺灣加權正2
-    "EWY",          # iShares MSCI 南韓 ETF（美股）
     "^TWII",        # 加權指數（市場環境參考）
     "^GSPC",        # S&P 500（市場環境參考）
     "^IXIC",        # 那斯達克（市場環境參考）
-    "^KS11",        # 韓國 KOSPI 指數（市場環境參考）
     # 繼續新增你想觀察的股票代號...
 ]
 
@@ -118,9 +116,8 @@ MIN_TRADING_DAYS = 120  # 觀察區間最少交易日（不足則自動跳過該
 ```
 
 股票代號格式參考 Yahoo Finance：
-- 美股 ETF：`EWY`
+- 美股 ETF：`VOO`
 - 台股個股：`2330.TW`
-- 韓國指數：`^KS11`
 - 美股指數：`^GSPC`、`^IXIC`
 - 美股個股：`AAPL`、`TSLA`
 

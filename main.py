@@ -1,4 +1,5 @@
 import base64
+import glob
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -635,6 +636,9 @@ def generate_html_report(results: list[tuple[str, dict, str]]):
 # 主程式
 # ==========================================
 if __name__ == "__main__":
+    for f in glob.glob(os.path.join(OUTPUT_DIR, "*.png")):
+        os.remove(f)
+
     with ThreadPoolExecutor(max_workers=4) as executor:
         dfs = list(executor.map(analyze_stock, STOCK_LIST))
 

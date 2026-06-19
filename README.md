@@ -212,8 +212,8 @@ Checkout repo
   → 安裝中文字體（Noto CJK / WenQuanYi）
   → 安裝 uv 並執行 uv sync
   → 清除 matplotlib 字體快取
-  → uv run python main.py
-  → git add Report/*.png docs/index.html
+  → uv run python main.py（啟動時自動清除 Report/ 舊 PNG 暫存檔）
+  → git add Report/ docs/index.html
   → git commit & push
 ```
 

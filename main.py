@@ -41,9 +41,11 @@ os.makedirs(DOCS_DIR, exist_ok=True)
 STOCK_LIST = [
     "009816.TW",
     "00685L.TW",
+    "00735.TW",
     "^TWII",
     "^GSPC",
     "^IXIC",
+    "^KS11",
     # 繼續新增你想觀察的股票代號...
 ]
 

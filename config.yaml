@@ -19,4 +19,4 @@ holdings:
     target_pct: 20   # 目標獲利 %，不填預設 20
   "00685L.TW":
     cost: 326.5
-    target_pct: 15
+    target_pct: 20

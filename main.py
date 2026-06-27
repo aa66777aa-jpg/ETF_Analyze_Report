@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 
+import yaml
+
 import matplotlib
 import matplotlib.font_manager as _fm
 import matplotlib.pyplot as plt
@@ -37,16 +39,24 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(DOCS_DIR, exist_ok=True)
 
 # ==========================================
-# ✏️  在這裡設定要觀察的股票清單
+# 從 config.yaml 讀取設定
 # ==========================================
-STOCK_LIST = [
-    "009816.TW",
-    "00735.TW",
-    "00685L.TW",
-    "^TWII",
-    "^KS11",
-    # 繼續新增你想觀察的股票代號...
-]
+_cfg_path = os.path.join(_BASE, "config.yaml")
+try:
+    with open(_cfg_path, encoding="utf-8") as _f:
+        _cfg: dict = yaml.safe_load(_f) or {}
+except FileNotFoundError:
+    raise SystemExit(
+        f"[ERROR] 找不到設定檔：{_cfg_path}\n請參考 README 建立 config.yaml。"
+    )
+
+STOCK_LIST: list[str] = _cfg.get("stock_list") or []
+if not STOCK_LIST:
+    raise SystemExit(
+        "[ERROR] config.yaml 中 stock_list 為空或未設定，請至少填入一支股票代號。"
+    )
+_holdings_raw = _cfg.get("holdings")
+HOLDINGS: dict[str, dict] = _holdings_raw if isinstance(_holdings_raw, dict) else {}
 
 LOOKBACK_DAYS = 365  # 顯示的觀察天數
 WARMUP_DAYS = 180  # 預先多抓的資料天數（確保 MA120 有足夠暖機）
@@ -79,6 +89,8 @@ _OVERALL_COLOR = {
     "正常定期投入": "#888888",
     "謹慎觀察": "#457b9d",
     "暫緩加碼": "#2a9d8f",
+    "考慮減碼": "#9b5de5",
+    "積極減碼": "#6a0572",
 }
 _OVERALL_CLASS = {
     "積極加碼": "add-strong",
@@ -86,6 +98,8 @@ _OVERALL_CLASS = {
     "正常定期投入": "neutral",
     "謹慎觀察": "caution",
     "暫緩加碼": "wait",
+    "考慮減碼": "sell",
+    "積極減碼": "sell-strong",
 }
 _SIG_CLASS = {"加碼": "add", "暫緩": "wait", "正常": "neutral"}
 
@@ -186,7 +200,7 @@ def _analyze_stock_impl(stock_id: str):
     return df
 
 
-def generate_signal(df: pd.DataFrame) -> dict:
+def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
     """根據最新一日數據判斷 ETF 定期投入的加碼時機。
 
     評分邏輯（距高點跌幅最高 +2，其餘各項 -1 / 0 / +1）：
@@ -200,7 +214,9 @@ def generate_signal(df: pd.DataFrame) -> dict:
       score == 1  → 考慮加碼
       score == 0  → 正常定期投入
       score == -1 → 謹慎觀察
-      score <= -2 → 暫緩加碼
+      score == -2 → 暫緩加碼
+      score == -3 → 考慮減碼
+      score <= -4 → 積極減碼
 
     最高分：+5（距高點明顯回落 +2，其餘三項均 +1）
     最低分：-4（四項指標均 -1）
@@ -287,14 +303,53 @@ def generate_signal(df: pd.DataFrame) -> dict:
         overall = "正常定期投入"
     elif score == -1:
         overall = "謹慎觀察"
-    else:
+    elif score == -2:
         overall = "暫緩加碼"
+    elif score == -3:
+        overall = "考慮減碼"
+    else:
+        overall = "積極減碼"
+
+    # 賣點共振：同時發出暫緩訊號的指標數量
+    sell_count = sum(1 for v in signals.values() if v[0] == "暫緩")
+    if sell_count >= 3:
+        sell_resonance, sell_resonance_cls = f"強力共振 ({sell_count}/4)", "sell-strong"
+    elif sell_count >= 2:
+        sell_resonance, sell_resonance_cls = f"共振 ({sell_count}/4)", "sell"
+    elif sell_count == 1:
+        sell_resonance, sell_resonance_cls = f"{sell_count}/4", "neutral"
+    else:
+        sell_resonance, sell_resonance_cls = "—", "neutral"
+
+    # 持倉損益追蹤
+    holding_info: dict = {}
+    if stock_id and stock_id in HOLDINGS:
+        h = HOLDINGS[stock_id]
+        cost_raw = h.get("cost")
+        if cost_raw is None:
+            print(f"⚠️  HOLDINGS[{stock_id!r}] 缺少 cost 欄位，跳過持倉追蹤。")
+        else:
+            cost = float(cost_raw)
+            target_pct = float(h.get("target_pct", 20))
+            target_price = cost * (1 + target_pct / 100)
+            pnl_pct = (price - cost) / cost * 100
+            holding_info = {
+                "cost": cost,
+                "target_pct": target_pct,
+                "target_price": target_price,
+                "price": price,
+                "pnl_pct": pnl_pct,
+                "reached_target": price >= target_price,
+            }
 
     return {
         "signals": signals,
         "score": score,
         "overall": overall,
         "price": price,
+        "sell_resonance": sell_resonance,
+        "sell_resonance_cls": sell_resonance_cls,
+        "holding_info": holding_info,
     }
 
 
@@ -334,7 +389,32 @@ def generate_index_context(df: pd.DataFrame) -> dict:
             "ma60": (f"MA60 {ma60_dev:+.1f}%", f"MA60偏差={ma60_dev:.1f}%", 0),
             "williams": (wr_display, wr_reason, 0),
         },
+        "sell_resonance": "—",
+        "sell_resonance_cls": "neutral",
+        "holding_info": {},
     }
+
+
+def compute_historical_scores(df: pd.DataFrame) -> pd.Series:
+    """向量化計算歷史每日評分，供圖表標記歷史買賣訊號使用。"""
+    scores = pd.Series(0, index=df.index, dtype=int)
+
+    scores += (df["RSI"] < RSI_OVERSOLD).astype(int)
+    scores -= (df["RSI"] > RSI_OVERBOUGHT).astype(int)
+
+    scores += (df["Drawdown"] <= DD_MILD).astype(int)
+    scores += (df["Drawdown"] <= DD_STRONG).astype(int)
+    scores -= (df["Drawdown"] >= DD_NEAR_HIGH).astype(int)
+
+    ma60_slope = df["MA60"].diff(20)
+    scores += ((df["MA60_Dev"] <= MA60_LOW) & (ma60_slope > 0)).astype(int)
+    scores -= (df["MA60_Dev"] >= MA60_HIGH).astype(int)
+
+    wr = df["Williams_%R"].fillna(-50)
+    scores += (wr <= WR_OVERSOLD).astype(int)
+    scores -= (wr >= WR_OVERBOUGHT).astype(int)
+
+    return scores
 
 
 def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
@@ -388,6 +468,58 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         color=ann_color,
         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=ann_color, alpha=0.8),
     )
+    # ── 歷史買賣訊號標記 ─────────────────────────────
+    h_scores = compute_historical_scores(df)
+    buy_idx = h_scores[h_scores >= 2].index
+    sell_idx = h_scores[h_scores <= -2].index
+    if not buy_idx.empty:
+        ax1.scatter(
+            buy_idx,
+            df.loc[buy_idx, "Close"],
+            marker="^",
+            color="#e63946",
+            s=20,
+            alpha=0.45,
+            zorder=5,
+            label="歷史買入區",
+        )
+    if not sell_idx.empty:
+        ax1.scatter(
+            sell_idx,
+            df.loc[sell_idx, "Close"],
+            marker="v",
+            color="#9b5de5",
+            s=20,
+            alpha=0.45,
+            zorder=5,
+            label="歷史賣出區",
+        )
+
+    # ── 持倉成本與停利目標線 ────────────────────────
+    if stock_id in HOLDINGS:
+        _h = HOLDINGS[stock_id]
+        _cost_raw = _h.get("cost")
+        if _cost_raw is not None:
+            _cost = float(_cost_raw)
+            _tgt_pct = float(_h.get("target_pct", 20))
+            _tgt_price = _cost * (1 + _tgt_pct / 100)
+            ax1.axhline(
+                _cost,
+                color="#f4a261",
+                linestyle="-.",
+                linewidth=1.5,
+                label=f"持倉成本 {_cost:.2f}",
+                alpha=0.85,
+            )
+            ax1.axhline(
+                _tgt_price,
+                color="#9b5de5",
+                linestyle="-.",
+                linewidth=1.5,
+                label=f"停利目標 {_tgt_price:.2f} (+{_tgt_pct:.0f}%)",
+                alpha=0.85,
+            )
+
     ax1.legend(loc="upper left")
     ax1.grid(True, alpha=0.4)
 
@@ -542,6 +674,40 @@ def _build_stock_html(
     if img_b64:
         img_tag = f'<img src="data:image/png;base64,{img_b64}" alt="{stock_id}" loading="lazy">'
 
+    # 賣點共振欄位
+    sell_res = signal_info.get("sell_resonance", "—")
+    sell_res_cls = signal_info.get("sell_resonance_cls", "neutral")
+
+    # 持倉損益欄位
+    holding_info = signal_info.get("holding_info", {})
+    if holding_info:
+        pnl = holding_info["pnl_pct"]
+        pnl_cls = "pnl-pos" if pnl >= 0 else "pnl-neg"
+        if holding_info["reached_target"]:
+            target_td = '<td class="pnl-target">已達停利 ✓</td>'
+        else:
+            remaining = (holding_info["target_price"] / holding_info["price"] - 1) * 100
+            target_td = f'<td class="neutral">尚差 {remaining:.1f}%</td>'
+        holding_tds = f'<td class="{pnl_cls}">{pnl:+.1f}%</td>{target_td}'
+    else:
+        holding_tds = '<td class="neutral">—</td><td class="neutral">—</td>'
+
+    # card meta bar（賣點共振 + 持倉損益）
+    meta_parts = []
+    if sell_res != "—":
+        meta_parts.append(f'賣點共振：<span class="{sell_res_cls}">{sell_res}</span>')
+    if holding_info:
+        pnl_m = holding_info["pnl_pct"]
+        pnl_cls_m = "pnl-pos" if pnl_m >= 0 else "pnl-neg"
+        meta_parts.append(f'持倉損益：<span class="{pnl_cls_m}">{pnl_m:+.1f}%</span>')
+        if holding_info["reached_target"]:
+            meta_parts.append('<span class="pnl-target">已達停利目標 ✓</span>')
+    meta_html = (
+        f'<div class="card-meta">{" &nbsp;·&nbsp; ".join(meta_parts)}</div>'
+        if meta_parts
+        else ""
+    )
+
     if is_index:
 
         def idx_td(key: str) -> str:
@@ -556,6 +722,9 @@ def _build_stock_html(
             f"{idx_td('drawdown')}"
             f"{idx_td('ma60')}"
             f"{idx_td('williams')}"
+            f'<td class="neutral">—</td>'
+            f'<td class="neutral">—</td>'
+            f'<td class="neutral">—</td>'
             f"</tr>"
         )
     else:
@@ -574,6 +743,8 @@ def _build_stock_html(
             f"{sig_td('drawdown')}"
             f"{sig_td('ma60')}"
             f"{sig_td('williams')}"
+            f'<td class="{sell_res_cls}">{sell_res}</td>'
+            f"{holding_tds}"
             f"</tr>"
         )
 
@@ -583,6 +754,7 @@ def _build_stock_html(
         f'<span class="sid">{stock_id}</span>'
         f'<span class="sig {overall_cls}">{overall}</span>'
         f"</div>"
+        f"{meta_html}"
         f"{img_tag}"
         f"</div>"
     )
@@ -646,7 +818,9 @@ if __name__ == "__main__":
     for sid, df in zip(STOCK_LIST, dfs):
         if df is not None:
             signal_info = (
-                generate_index_context(df) if _is_index(sid) else generate_signal(df)
+                generate_index_context(df)
+                if _is_index(sid)
+                else generate_signal(df, sid)
             )
             b64 = plot_stock(sid, df, signal_info)
             results.append((sid, signal_info, b64))

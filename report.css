@@ -32,6 +32,17 @@ td[title]{cursor:help}
 .caution{color:#457b9d;font-weight:600}
 .wait{color:#2a9d8f;font-weight:700}
 
+/* 賣出訊號顏色 */
+.sell{color:#9b5de5;font-weight:700}
+.sell-strong{color:#6a0572;font-weight:700}
+.l-sell{color:#9b5de5;border:1.5px solid #9b5de5}
+.l-sell-strong{color:#6a0572;border:1.5px solid #6a0572}
+
+/* 持倉損益（台股慣例：紅=獲利，綠=虧損） */
+.pnl-pos{color:#e63946;font-weight:600}
+.pnl-neg{color:#2a9d8f;font-weight:600}
+.pnl-target{color:#f4a261;font-weight:700}
+
 /* 圖表卡片 */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(620px,1fr));gap:20px}
 .card{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden}
@@ -43,6 +54,9 @@ td[title]{cursor:help}
 .card-header .neutral{color:#aaa}
 .card-header .caution{color:#8ab4d4}
 .card-header .wait{color:#4ecdc4}
+.card-header .sell{color:#c77dff}
+.card-header .sell-strong{color:#d6a4ff}
+.card-meta{padding:8px 18px;font-size:.8rem;background:#f8f9fa;border-bottom:1px solid #f0f0f0;color:#555}
 .card img{width:100%;display:block}
 
 footer{text-align:center;padding:28px;color:#bbb;font-size:.78rem}

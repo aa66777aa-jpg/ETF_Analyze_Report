@@ -62,5 +62,6 @@ td[title]{cursor:help}
 footer{text-align:center;padding:28px;color:#bbb;font-size:.78rem}
 footer a{color:#bbb}
 .index-badge{font-size:.68rem;font-weight:400;color:#888;background:#f0f0f0;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle}
+.inverse-badge{font-size:.68rem;font-weight:600;color:#fff;background:#7b2d8b;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle}
 .disclaimer{background:#fffbe6;border-left:3px solid #f4a261;border-radius:6px;padding:10px 16px;margin-bottom:20px;font-size:.79rem;color:#777;line-height:1.6}
 @media(max-width:680px){.grid{grid-template-columns:1fr}.legend{gap:8px}}

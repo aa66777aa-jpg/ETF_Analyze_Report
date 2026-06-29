@@ -57,6 +57,12 @@ if not STOCK_LIST:
     )
 _holdings_raw = _cfg.get("holdings")
 HOLDINGS: dict[str, dict] = _holdings_raw if isinstance(_holdings_raw, dict) else {}
+_inverse_raw = _cfg.get("inverse_list")
+INVERSE_LIST: list[str] = _inverse_raw if isinstance(_inverse_raw, list) else []
+_leverage_raw = _cfg.get("leverage_list")
+LEVERAGE_MAP: dict[str, float] = (
+    _leverage_raw if isinstance(_leverage_raw, dict) else {}
+)
 
 LOOKBACK_DAYS = 365  # 顯示的觀察天數
 WARMUP_DAYS = 180  # 預先多抓的資料天數（確保 MA120 有足夠暖機）
@@ -110,6 +116,14 @@ def _safe_id(stock_id: str) -> str:
 
 def _is_index(stock_id: str) -> bool:
     return stock_id.startswith("^")
+
+
+def _is_inverse(stock_id: str) -> bool:
+    return stock_id in INVERSE_LIST
+
+
+def _get_leverage(stock_id: str) -> float:
+    return float(LEVERAGE_MAP.get(stock_id, 1.0))
 
 
 def analyze_stock(stock_id: str):
@@ -200,7 +214,9 @@ def _analyze_stock_impl(stock_id: str):
     return df
 
 
-def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
+def generate_signal(
+    df: pd.DataFrame, stock_id: str = "", leverage: float = 1.0
+) -> dict:
     """根據最新一日數據判斷 ETF 定期投入的加碼時機。
 
     評分邏輯（距高點跌幅最高 +2，其餘各項 -1 / 0 / +1）：
@@ -226,6 +242,15 @@ def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
     price = float(latest["Close"])
     signals = {}
 
+    # 槓桿調整：DD 與 MA60 閾值等比放大，RSI / W%R 為相對指標不調整
+    lev = max(leverage, 1.0)
+    dd_strong = DD_STRONG * lev
+    dd_mild = DD_MILD * lev
+    dd_near_high = DD_NEAR_HIGH * lev
+    ma60_low = MA60_LOW * lev
+    ma60_high = MA60_HIGH * lev
+    lev_note = f"（{lev:.0f}倍槓桿調整）" if lev > 1 else ""
+
     # --- RSI ---
     rsi = float(latest["RSI"])
     if rsi < RSI_OVERSOLD:
@@ -238,22 +263,22 @@ def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
     # --- 距 52 週高點跌幅（高點視窗不足時加註說明） ---
     drawdown = float(latest["Drawdown"])
     dd_note = f"，高點視窗僅 {total_days} 日" if total_days < HIGH_WINDOW else ""
-    if drawdown <= DD_STRONG:
+    if drawdown <= dd_strong:
         signals["drawdown"] = (
             "加碼",
-            f"距高點 {drawdown:.1f}%（明顯回落{dd_note}）",
+            f"距高點 {drawdown:.1f}%（明顯回落{dd_note}{lev_note}）",
             2,
         )
-    elif drawdown <= DD_MILD:
+    elif drawdown <= dd_mild:
         signals["drawdown"] = (
             "加碼",
-            f"距高點 {drawdown:.1f}%（有所回落{dd_note}）",
+            f"距高點 {drawdown:.1f}%（有所回落{dd_note}{lev_note}）",
             1,
         )
-    elif drawdown >= DD_NEAR_HIGH:
+    elif drawdown >= dd_near_high:
         signals["drawdown"] = (
             "暫緩",
-            f"距高點僅 {drawdown:.1f}%（接近高點{dd_note}）",
+            f"距高點僅 {drawdown:.1f}%（接近高點{dd_note}{lev_note}）",
             -1,
         )
     else:
@@ -262,11 +287,11 @@ def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
     # --- 價格 vs MA60（含斜率方向過濾） ---
     ma60_dev = float(latest["MA60_Dev"])
     ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-20])
-    if ma60_dev <= MA60_LOW:
+    if ma60_dev <= ma60_low:
         if ma60_slope > 0:
             signals["ma60"] = (
                 "加碼",
-                f"低於 MA60 {abs(ma60_dev):.1f}%（均線向上，回檔加碼）",
+                f"低於 MA60 {abs(ma60_dev):.1f}%（均線向上，回檔加碼{lev_note}）",
                 1,
             )
         else:
@@ -275,8 +300,12 @@ def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
                 f"低於 MA60 {abs(ma60_dev):.1f}%（均線下彎，謹慎觀察）",
                 0,
             )
-    elif ma60_dev >= MA60_HIGH:
-        signals["ma60"] = ("暫緩", f"高於 MA60 +{ma60_dev:.1f}%（過度延伸）", -1)
+    elif ma60_dev >= ma60_high:
+        signals["ma60"] = (
+            "暫緩",
+            f"高於 MA60 +{ma60_dev:.1f}%（過度延伸{lev_note}）",
+            -1,
+        )
     else:
         signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
 
@@ -350,6 +379,7 @@ def generate_signal(df: pd.DataFrame, stock_id: str = "") -> dict:
         "sell_resonance": sell_resonance,
         "sell_resonance_cls": sell_resonance_cls,
         "holding_info": holding_info,
+        "leverage": lev,
     }
 
 
@@ -395,24 +425,207 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     }
 
 
-def compute_historical_scores(df: pd.DataFrame) -> pd.Series:
-    """向量化計算歷史每日評分，供圖表標記歷史買賣訊號使用。"""
+def generate_inverse_signal(
+    df: pd.DataFrame, stock_id: str = "", leverage: float = 1.0
+) -> dict:
+    """反向型 ETF 的評分邏輯：所有指標方向相反（市場過熱才是加碼時機）。
+
+    RSI 超買 / Williams %R 超買 / 接近52週高點 / 高於MA60 → 加碼
+    RSI 超賣 / Williams %R 超賣 / 大幅距離高點 / 低於MA60  → 暫緩
+    leverage > 1 時（如 3 倍反向 SQQQ），DD / MA60 閾值等比放大。
+    """
+    total_days = df.attrs.get("total_history_days", len(df))
+    latest = df.iloc[-1]
+    price = float(latest["Close"])
+    signals = {}
+
+    # 槓桿調整（反向槓桿 ETF 同樣需要縮放，RSI / W%R 不調整）
+    lev = max(leverage, 1.0)
+    dd_strong = DD_STRONG * lev
+    dd_mild = DD_MILD * lev
+    dd_near_high = DD_NEAR_HIGH * lev
+    ma60_low = MA60_LOW * lev
+    ma60_high = MA60_HIGH * lev
+    lev_note = f"（{lev:.0f}倍槓桿調整）" if lev > 1 else ""
+
+    # --- RSI（反向：超買才加碼，超賣才暫緩）---
+    rsi = float(latest["RSI"])
+    if rsi > RSI_OVERBOUGHT:
+        signals["rsi"] = ("加碼", f"市場超賣（反向ETF RSI {rsi:.1f}，過熱）", 1)
+    elif rsi < RSI_OVERSOLD:
+        signals["rsi"] = ("暫緩", f"市場大漲（反向ETF RSI {rsi:.1f}，超賣）", -1)
+    else:
+        signals["rsi"] = ("正常", f"中性（RSI {rsi:.1f}）", 0)
+
+    # --- 距 52 週高點（反向：接近高點 = 市場持續下跌 = +2；大幅跌離高點 = 市場反彈 = -2）---
+    drawdown = float(latest["Drawdown"])
+    dd_note = f"，高點視窗僅 {total_days} 日" if total_days < HIGH_WINDOW else ""
+    if drawdown >= dd_near_high:
+        signals["drawdown"] = (
+            "加碼",
+            f"距高點僅 {drawdown:.1f}%（接近高點，市場持續下跌{dd_note}{lev_note}）",
+            2,
+        )
+    elif drawdown <= dd_strong:
+        signals["drawdown"] = (
+            "暫緩",
+            f"距高點 {drawdown:.1f}%（大幅跌離，市場強勁反彈{dd_note}{lev_note}）",
+            -2,
+        )
+    elif drawdown <= dd_mild:
+        signals["drawdown"] = (
+            "暫緩",
+            f"距高點 {drawdown:.1f}%（有所跌離，市場反彈{dd_note}{lev_note}）",
+            -1,
+        )
+    else:
+        signals["drawdown"] = ("正常", f"距高點 {drawdown:.1f}%{dd_note}", 0)
+
+    # --- 價格 vs MA60（反向：高於MA60 = 市場下跌趨勢 = 利多）---
+    ma60_dev = float(latest["MA60_Dev"])
+    ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-20])
+    if ma60_dev >= ma60_high:
+        if ma60_slope > 0:
+            signals["ma60"] = (
+                "加碼",
+                f"高於MA60 +{ma60_dev:.1f}%（均線向上，市場下跌趨勢持續{lev_note}）",
+                1,
+            )
+        else:
+            signals["ma60"] = (
+                "正常",
+                f"高於MA60 +{ma60_dev:.1f}%（均線轉平，趨勢可能反轉）",
+                0,
+            )
+    elif ma60_dev <= ma60_low:
+        signals["ma60"] = (
+            "暫緩",
+            f"低於MA60 {abs(ma60_dev):.1f}%（市場上漲趨勢{lev_note}）",
+            -1,
+        )
+    else:
+        signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
+
+    # --- Williams %R（反向：超買才加碼，超賣才暫緩）---
+    wr_raw = latest["Williams_%R"]
+    if pd.isna(wr_raw):
+        signals["williams"] = ("正常", "橫盤無波動（W%R 無法計算）", 0)
+    else:
+        wr = float(wr_raw)
+        if wr >= WR_OVERBOUGHT:
+            signals["williams"] = (
+                "加碼",
+                f"市場極度超賣（反向ETF W%R {wr:.1f}，超買）",
+                1,
+            )
+        elif wr <= WR_OVERSOLD:
+            signals["williams"] = (
+                "暫緩",
+                f"市場極度上漲（反向ETF W%R {wr:.1f}，超賣）",
+                -1,
+            )
+        else:
+            signals["williams"] = ("正常", f"中性（{wr:.1f}）", 0)
+
+    score = sum(v[2] for v in signals.values())
+
+    if score >= 2:
+        overall = "積極加碼"
+    elif score == 1:
+        overall = "考慮加碼"
+    elif score == 0:
+        overall = "正常定期投入"
+    elif score == -1:
+        overall = "謹慎觀察"
+    elif score == -2:
+        overall = "暫緩加碼"
+    elif score == -3:
+        overall = "考慮減碼"
+    else:
+        overall = "積極減碼"
+
+    sell_count = sum(1 for v in signals.values() if v[0] == "暫緩")
+    if sell_count >= 3:
+        sell_resonance, sell_resonance_cls = f"強力共振 ({sell_count}/4)", "sell-strong"
+    elif sell_count >= 2:
+        sell_resonance, sell_resonance_cls = f"共振 ({sell_count}/4)", "sell"
+    elif sell_count == 1:
+        sell_resonance, sell_resonance_cls = f"{sell_count}/4", "neutral"
+    else:
+        sell_resonance, sell_resonance_cls = "—", "neutral"
+
+    holding_info: dict = {}
+    if stock_id and stock_id in HOLDINGS:
+        h = HOLDINGS[stock_id]
+        cost_raw = h.get("cost")
+        if cost_raw is None:
+            print(f"⚠️  HOLDINGS[{stock_id!r}] 缺少 cost 欄位，跳過持倉追蹤。")
+        else:
+            cost = float(cost_raw)
+            target_pct = float(h.get("target_pct", 20))
+            target_price = cost * (1 + target_pct / 100)
+            pnl_pct = (price - cost) / cost * 100
+            holding_info = {
+                "cost": cost,
+                "target_pct": target_pct,
+                "target_price": target_price,
+                "price": price,
+                "pnl_pct": pnl_pct,
+                "reached_target": price >= target_price,
+            }
+
+    return {
+        "signals": signals,
+        "score": score,
+        "overall": overall,
+        "price": price,
+        "sell_resonance": sell_resonance,
+        "sell_resonance_cls": sell_resonance_cls,
+        "holding_info": holding_info,
+        "is_inverse": True,
+        "leverage": lev,
+    }
+
+
+def compute_historical_scores(
+    df: pd.DataFrame, is_inverse: bool = False, leverage: float = 1.0
+) -> pd.Series:
+    """向量化計算歷史每日評分，供圖表標記歷史買賣訊號使用。
+    is_inverse=True 時，所有訊號方向相反（反向型 ETF）。
+    leverage > 1 時，DD 與 MA60 閾值等比放大（槓桿型 ETF）。
+    """
     scores = pd.Series(0, index=df.index, dtype=int)
+    sign = -1 if is_inverse else 1
+    lev = max(leverage, 1.0)
+    dd_strong = DD_STRONG * lev
+    dd_mild = DD_MILD * lev
+    dd_near_high = DD_NEAR_HIGH * lev
+    ma60_low = MA60_LOW * lev
+    ma60_high = MA60_HIGH * lev
 
-    scores += (df["RSI"] < RSI_OVERSOLD).astype(int)
-    scores -= (df["RSI"] > RSI_OVERBOUGHT).astype(int)
+    scores += sign * (df["RSI"] < RSI_OVERSOLD).astype(int)
+    scores -= sign * (df["RSI"] > RSI_OVERBOUGHT).astype(int)
 
-    scores += (df["Drawdown"] <= DD_MILD).astype(int)
-    scores += (df["Drawdown"] <= DD_STRONG).astype(int)
-    scores -= (df["Drawdown"] >= DD_NEAR_HIGH).astype(int)
+    scores += sign * (df["Drawdown"] <= dd_mild).astype(int)
+    scores += sign * (df["Drawdown"] <= dd_strong).astype(int)
+    scores -= sign * (df["Drawdown"] >= dd_near_high).astype(int)
+    # 反向 ETF：near-high 在 generate_inverse_signal 給 +2（與正向 strong 的疊加機制對稱）
+    if is_inverse:
+        scores += (df["Drawdown"] >= dd_near_high).astype(int)
 
     ma60_slope = df["MA60"].diff(20)
-    scores += ((df["MA60_Dev"] <= MA60_LOW) & (ma60_slope > 0)).astype(int)
-    scores -= (df["MA60_Dev"] >= MA60_HIGH).astype(int)
+    if is_inverse:
+        # 反向 ETF：高於 MA60 且均線向上才加碼；低於 MA60 則暫緩（不論斜率）
+        scores += ((df["MA60_Dev"] >= ma60_high) & (ma60_slope > 0)).astype(int)
+        scores -= (df["MA60_Dev"] <= ma60_low).astype(int)
+    else:
+        # 正向 ETF：低於 MA60 且均線向上才加碼；高於 MA60 則暫緩（不論斜率）
+        scores += ((df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)).astype(int)
+        scores -= (df["MA60_Dev"] >= ma60_high).astype(int)
 
     wr = df["Williams_%R"].fillna(-50)
-    scores += (wr <= WR_OVERSOLD).astype(int)
-    scores -= (wr >= WR_OVERBOUGHT).astype(int)
+    scores += sign * (wr <= WR_OVERSOLD).astype(int)
+    scores -= sign * (wr >= WR_OVERBOUGHT).astype(int)
 
     return scores
 
@@ -423,11 +636,23 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
     score = signal_info["score"]
     last_price = signal_info["price"]
     is_index = signal_info.get("is_index", False)
+    is_inverse = signal_info.get("is_inverse", False)
+    leverage = signal_info.get("leverage", 1.0)
     ann_color = _OVERALL_COLOR.get(overall, "#888888")
 
+    # 縮放後的圖四閾值（讓虛線位置與評分邏輯一致）
+    lev = max(leverage, 1.0)
+    plot_dd_strong = DD_STRONG * lev
+    plot_dd_mild = DD_MILD * lev
+    plot_dd_near_high = DD_NEAR_HIGH * lev
+
+    lev_label = f"×{lev:.0f}" if lev > 1 else ""
+    title_tag = (
+        "【反向ETF】" if is_inverse else (f"【{lev_label}倍槓桿】" if lev > 1 else "")
+    )
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(13, 14), sharex=True)
     fig.suptitle(
-        f"{stock_id}  定期投入時機分析  ({START_DATE} ~ {TODAY})",
+        f"{stock_id} {title_tag} 定期投入時機分析  ({START_DATE} ~ {TODAY})",
         fontsize=14,
         fontweight="bold",
     )
@@ -456,6 +681,10 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
     ax1.set_ylabel("Price")
     if is_index:
         ann_text = f"{overall}\n最新收盤：{last_price:.2f}"
+    elif is_inverse:
+        ann_text = (
+            f"【反向ETF】建議：{overall}（{score:+d} 分）\n最新收盤：{last_price:.2f}"
+        )
     else:
         ann_text = f"建議：{overall}（{score:+d} 分）\n最新收盤：{last_price:.2f}"
     ax1.annotate(
@@ -469,7 +698,7 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=ann_color, alpha=0.8),
     )
     # ── 歷史買賣訊號標記 ─────────────────────────────
-    h_scores = compute_historical_scores(df)
+    h_scores = compute_historical_scores(df, is_inverse=is_inverse, leverage=leverage)
     buy_idx = h_scores[h_scores >= 2].index
     sell_idx = h_scores[h_scores <= -2].index
     if not buy_idx.empty:
@@ -592,45 +821,84 @@ def plot_stock(stock_id: str, df: pd.DataFrame, signal_info: dict) -> str:
     # ── 圖四：距 52 週高點跌幅 ──────────────────────────
     dd = df["Drawdown"]
     ax4.plot(df.index, dd, color="#264653", linewidth=1.2, label="距高點跌幅")
-    ax4.fill_between(
-        df.index,
-        dd,
-        0,
-        where=(dd <= DD_STRONG),
-        color="#e63946",
-        alpha=0.35,
-        label=f"積極加碼區（>{abs(DD_STRONG)}%）",
-    )
-    ax4.fill_between(
-        df.index,
-        dd,
-        0,
-        where=(dd > DD_STRONG) & (dd <= DD_MILD),
-        color="#f4a261",
-        alpha=0.3,
-        label=f"考慮加碼區（{abs(DD_MILD)}~{abs(DD_STRONG)}%）",
-    )
-    ax4.fill_between(
-        df.index,
-        dd,
-        0,
-        where=(dd > DD_MILD) & (dd < DD_NEAR_HIGH),
-        color="#aaaaaa",
-        alpha=0.15,
-        label=f"正常區（{abs(DD_NEAR_HIGH)}~{abs(DD_MILD)}%）",
-    )
-    ax4.fill_between(
-        df.index,
-        dd,
-        0,
-        where=(dd >= DD_NEAR_HIGH),
-        color="#2a9d8f",
-        alpha=0.15,
-        label=f"接近高點（<{abs(DD_NEAR_HIGH)}%）",
-    )
-    ax4.axhline(DD_MILD, color="#f4a261", linestyle="--", linewidth=1)
-    ax4.axhline(DD_STRONG, color="#e63946", linestyle="--", linewidth=1)
-    ax4.axhline(DD_NEAR_HIGH, color="#2a9d8f", linestyle=":", linewidth=1)
+    if is_inverse:
+        # 反向 ETF：接近高點 = 市場持續下跌 = 利多（紅）；跌離高點 = 市場反彈 = 警示（綠）
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd >= plot_dd_near_high),
+            color="#e63946",
+            alpha=0.35,
+            label=f"加碼區（市場跌勢，距高點<{abs(plot_dd_near_high):.0f}%）",
+        )
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd > plot_dd_mild) & (dd < plot_dd_near_high),
+            color="#aaaaaa",
+            alpha=0.15,
+            label=f"正常區（{abs(plot_dd_near_high):.0f}~{abs(plot_dd_mild):.0f}%）",
+        )
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd > plot_dd_strong) & (dd <= plot_dd_mild),
+            color="#f4a261",
+            alpha=0.3,
+            label=f"謹慎區（市場反彈，{abs(plot_dd_mild):.0f}~{abs(plot_dd_strong):.0f}%）",
+        )
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd <= plot_dd_strong),
+            color="#2a9d8f",
+            alpha=0.2,
+            label=f"暫緩區（市場強勁反彈，>{abs(plot_dd_strong):.0f}%）",
+        )
+    else:
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd <= plot_dd_strong),
+            color="#e63946",
+            alpha=0.35,
+            label=f"積極加碼區（>{abs(plot_dd_strong):.0f}%）",
+        )
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd > plot_dd_strong) & (dd <= plot_dd_mild),
+            color="#f4a261",
+            alpha=0.3,
+            label=f"考慮加碼區（{abs(plot_dd_mild):.0f}~{abs(plot_dd_strong):.0f}%）",
+        )
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd > plot_dd_mild) & (dd < plot_dd_near_high),
+            color="#aaaaaa",
+            alpha=0.15,
+            label=f"正常區（{abs(plot_dd_near_high):.0f}~{abs(plot_dd_mild):.0f}%）",
+        )
+        ax4.fill_between(
+            df.index,
+            dd,
+            0,
+            where=(dd >= plot_dd_near_high),
+            color="#2a9d8f",
+            alpha=0.15,
+            label=f"接近高點（<{abs(plot_dd_near_high):.0f}%）",
+        )
+    ax4.axhline(plot_dd_mild, color="#f4a261", linestyle="--", linewidth=1)
+    ax4.axhline(plot_dd_strong, color="#e63946", linestyle="--", linewidth=1)
+    ax4.axhline(plot_dd_near_high, color="#2a9d8f", linestyle=":", linewidth=1)
     ax4.axhline(0, color="gray", linewidth=0.5)
     ax4.set_ylabel("距高點 (%)")
     ax4.set_xlabel("Date")
@@ -664,6 +932,7 @@ def _build_stock_html(
     score = signal_info["score"]
     signals = signal_info["signals"]
     is_index = signal_info.get("is_index", False)
+    is_inverse = signal_info.get("is_inverse", False)
 
     if is_index:
         overall_cls = signal_info.get("overall_cls", "neutral")
@@ -735,9 +1004,10 @@ def _build_stock_html(
             return f'<td class="{cls}" title="{reason}">{sig}</td>'
 
         score_suffix = f"&nbsp;({score:+d})"
+        inverse_badge = ' <span class="inverse-badge">反向</span>' if is_inverse else ""
         row = (
             f"<tr>"
-            f'<td class="sid">{stock_id}</td>'
+            f'<td class="sid">{stock_id}{inverse_badge}</td>'
             f'<td class="{overall_cls} overall">{overall}{score_suffix}</td>'
             f"{sig_td('rsi')}"
             f"{sig_td('drawdown')}"
@@ -817,11 +1087,14 @@ if __name__ == "__main__":
     results = []
     for sid, df in zip(STOCK_LIST, dfs):
         if df is not None:
-            signal_info = (
-                generate_index_context(df)
-                if _is_index(sid)
-                else generate_signal(df, sid)
-            )
+            if _is_index(sid):
+                signal_info = generate_index_context(df)
+            elif _is_inverse(sid):
+                signal_info = generate_inverse_signal(
+                    df, sid, leverage=_get_leverage(sid)
+                )
+            else:
+                signal_info = generate_signal(df, sid, leverage=_get_leverage(sid))
             b64 = plot_stock(sid, df, signal_info)
             results.append((sid, signal_info, b64))
 

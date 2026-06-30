@@ -286,7 +286,7 @@ def generate_signal(
 
     # --- 價格 vs MA60（含斜率方向過濾） ---
     ma60_dev = float(latest["MA60_Dev"])
-    ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-20])
+    ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-21])
     if ma60_dev <= ma60_low:
         if ma60_slope > 0:
             signals["ma60"] = (
@@ -357,6 +357,8 @@ def generate_signal(
         cost_raw = h.get("cost")
         if cost_raw is None:
             print(f"⚠️  HOLDINGS[{stock_id!r}] 缺少 cost 欄位，跳過持倉追蹤。")
+        elif float(cost_raw) == 0:
+            print(f"⚠️  HOLDINGS[{stock_id!r}] cost 為 0，無法計算損益，跳過持倉追蹤。")
         else:
             cost = float(cost_raw)
             target_pct = float(h.get("target_pct", 20))
@@ -483,7 +485,7 @@ def generate_inverse_signal(
 
     # --- 價格 vs MA60（反向：高於MA60 = 市場下跌趨勢 = 利多）---
     ma60_dev = float(latest["MA60_Dev"])
-    ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-20])
+    ma60_slope = float(latest["MA60"]) - float(df["MA60"].iloc[-21])
     if ma60_dev >= ma60_high:
         if ma60_slope > 0:
             signals["ma60"] = (
@@ -560,6 +562,8 @@ def generate_inverse_signal(
         cost_raw = h.get("cost")
         if cost_raw is None:
             print(f"⚠️  HOLDINGS[{stock_id!r}] 缺少 cost 欄位，跳過持倉追蹤。")
+        elif float(cost_raw) == 0:
+            print(f"⚠️  HOLDINGS[{stock_id!r}] cost 為 0，無法計算損益，跳過持倉追蹤。")
         else:
             cost = float(cost_raw)
             target_pct = float(h.get("target_pct", 20))
@@ -623,9 +627,10 @@ def compute_historical_scores(
         scores += ((df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)).astype(int)
         scores -= (df["MA60_Dev"] >= ma60_high).astype(int)
 
-    wr = df["Williams_%R"].fillna(-50)
-    scores += sign * (wr <= WR_OVERSOLD).astype(int)
-    scores -= sign * (wr >= WR_OVERBOUGHT).astype(int)
+    wr = df["Williams_%R"]
+    wr_valid = wr.notna()
+    scores += sign * (wr_valid & (wr <= WR_OVERSOLD)).astype(int)
+    scores -= sign * (wr_valid & (wr >= WR_OVERBOUGHT)).astype(int)
 
     return scores
 

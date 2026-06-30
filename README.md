@@ -115,7 +115,7 @@ make update # 更新 uv 本身
 
 ## 設定
 
-所有常用設定集中於 [config.yaml](config.yaml)，**不需要修改 `main.py`**。
+所有常用設定集中於 [config.yaml](config.yaml)，**不需要修改任何 Python 檔案**。
 
 ### 觀察清單
 
@@ -159,7 +159,7 @@ inverse_list:
 
 ### 技術指標參數
 
-進階參數（RSI 週期、均線區間、各訊號閾值等）仍在 [main.py](main.py) 頂端的常數區塊調整。
+進階參數（RSI 週期、均線區間、各訊號閾值等）在 [config.py](config.py) 的常數區塊調整。
 
 股票代號格式參考 Yahoo Finance：
 - 美股 ETF：`VOO`
@@ -222,8 +222,8 @@ W%R = (最高價 - 收盤) / (最高價 - 最低價) × (-100)
 
 | 環境 | 條件（四項中達到幾項） |
 |------|----------------------|
-| **偏多** | ≥ 3 項多頭訊號（RSI > 60、接近高點、MA60 偏差 > 3%、W%R ≥ -20） |
-| **偏空** | ≥ 3 項空頭訊號（RSI < 45、距高點回落 > 8%、MA60 偏差 < -3%、W%R ≤ -80） |
+| **偏多** | ≥ 3 項多頭訊號（RSI > 70、接近高點、MA60 偏差 > 8%、W%R ≥ -20） |
+| **偏空** | ≥ 3 項空頭訊號（RSI < 35、距高點回落 > 8%、MA60 偏差 < -5%、W%R ≤ -80） |
 | **中性** | 其餘情況 |
 
 ## 專案架構
@@ -231,7 +231,13 @@ W%R = (最高價 - 收盤) / (最高價 - 最低價) × (-100)
 ```
 ETF_Analyze_Report/
 ├── config.yaml              # ✏️ 使用者設定：觀察清單、持倉成本追蹤
-├── main.py                  # 主程式：下載資料、計算指標、繪圖、生成報告
+├── config.py                # 常數、閾值、config.yaml 載入、工具函式
+├── analysis.py              # 股價下載與技術指標計算
+├── signal_common.py         # 共用評分工具（閾值縮放、持倉計算、歷史評分）
+├── signals.py               # 訊號產生器（正向 / 反向 / 指數）
+├── chart.py                 # matplotlib 繪圖
+├── report.py                # HTML 報告生成
+├── main.py                  # 進入點：串接各模組、多執行緒下載
 ├── report_template.html     # HTML 報告模板（%%佔位符%%由程式替換）
 ├── report.css               # 報告樣式表（執行時自動內嵌至 docs/index.html）
 ├── Makefile                 # 常用指令：lint / run / all / update

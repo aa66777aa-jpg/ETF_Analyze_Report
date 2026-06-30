@@ -33,7 +33,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Clear matplotlib font cache
         run: uv run python -c "import matplotlib, shutil; shutil.rmtree(matplotlib.get_cachedir(), ignore_errors=True)"
@@ -45,7 +45,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
           git add Report/ docs/index.html
           git diff --cached --quiet || git commit -m "chore: update ETF charts $(date -u +%Y-%m-%d)"
-          git pull --rebase
           git push

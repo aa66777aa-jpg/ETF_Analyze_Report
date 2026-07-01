@@ -45,7 +45,21 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase
-          git add Report/ docs/index.html
-          git diff --cached --quiet || git commit -m "chore: update ETF charts $(date -u +%Y-%m-%d)"
-          git push
+          
+          # 1. 先把產生的圖表與報告加進暫存區
+          # 加上 || true 是防止萬一這兩個路徑沒檔案時，不會讓整個 Workflow 崩潰
+          git add Report/ docs/index.html || true
+          
+          # 2. 檢查有沒有檔案變更，有的話才執行 Commit
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update ETF charts $(date -u +%Y-%m-%d)"
+            
+            # 3. Commit 完後，在 Push 前一刻才做 rebase，確保本地的 commit 疊在最上層
+            # -X ours 可以在萬一發生微小衝突時，以這次自動生成的檔案為主
+            git pull --rebase -X ours origin ${GITHUB_REF_NAME}
+            
+            # 4. 推送回目前的 branch
+            git push origin HEAD:${GITHUB_REF_NAME}
+          else
+            echo "沒有偵測到任何圖表更新，跳過 Commit 與 Push。"
+          fi

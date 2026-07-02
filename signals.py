@@ -1,6 +1,8 @@
 import pandas as pd
 
 from config import (
+    CMF_OVERBOUGHT,
+    CMF_OVERSOLD,
     DD_MILD,
     DD_NEAR_HIGH,
     HIGH_WINDOW,
@@ -8,10 +10,9 @@ from config import (
     MA60_LOW,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
-    WR_OVERBOUGHT,
-    WR_OVERSOLD,
 )
 from signal_common import (
+    _classify_cmf,
     _holding_info,
     _leverage_thresholds,
     _score_to_overall,
@@ -115,17 +116,7 @@ def generate_signal(
     else:
         signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
 
-    wr_raw = latest["Williams_%R"]
-    if pd.isna(wr_raw):
-        signals["williams"] = ("正常", "橫盤無波動（W%R 無法計算）", 0)
-    else:
-        wr = float(wr_raw)
-        if wr <= WR_OVERSOLD:
-            signals["williams"] = ("加碼", f"超賣（{wr:.1f}）", 1)
-        elif wr >= WR_OVERBOUGHT:
-            signals["williams"] = ("暫緩", f"超買（{wr:.1f}）", -1)
-        else:
-            signals["williams"] = ("正常", f"中性（{wr:.1f}）", 0)
+    signals["cmf"] = _classify_cmf(latest["CMF"])
 
     score = sum(v[2] for v in signals.values())
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)
@@ -149,15 +140,16 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     rsi = float(latest["RSI"])
     drawdown = float(latest["Drawdown"])
     ma60_dev = float(latest["MA60_Dev"])
-    wr_raw = latest["Williams_%R"]
-    wr = float(wr_raw) if not pd.isna(wr_raw) else -50.0
+    cmf_raw = latest["CMF"]
+    cmf_valid = pd.notna(cmf_raw)
+    cmf = float(cmf_raw) if cmf_valid else 0.0
 
     bull = sum(
         [
             rsi > RSI_OVERBOUGHT,
             drawdown >= DD_NEAR_HIGH,
             ma60_dev > MA60_HIGH,
-            wr >= WR_OVERBOUGHT,
+            cmf >= CMF_OVERBOUGHT,
         ]
     )
     bear = sum(
@@ -165,7 +157,7 @@ def generate_index_context(df: pd.DataFrame) -> dict:
             rsi < RSI_OVERSOLD,
             drawdown <= DD_MILD,
             ma60_dev < MA60_LOW,
-            wr <= WR_OVERSOLD,
+            cmf <= CMF_OVERSOLD,
         ]
     )
 
@@ -176,10 +168,8 @@ def generate_index_context(df: pd.DataFrame) -> dict:
     else:
         env, env_cls = "中性", "neutral"
 
-    wr_display = f"W%R {wr:.0f}" if not pd.isna(wr_raw) else "W%R 橫盤"
-    wr_reason = (
-        f"Williams %R={wr:.1f}" if not pd.isna(wr_raw) else "Williams %R 橫盤無法計算"
-    )
+    cmf_display = f"CMF {cmf:+.2f}" if cmf_valid else "CMF 資料不足"
+    cmf_reason = f"CMF={cmf:.2f}" if cmf_valid else "CMF 成交量資料不足無法計算"
 
     return {
         "is_index": True,
@@ -192,7 +182,7 @@ def generate_index_context(df: pd.DataFrame) -> dict:
             "rsi": (f"RSI {rsi:.0f}", f"RSI={rsi:.1f}", 0),
             "drawdown": (f"{drawdown:.1f}%", f"距高點跌幅={drawdown:.1f}%", 0),
             "ma60": (f"MA60 {ma60_dev:+.1f}%", f"MA60偏差={ma60_dev:.1f}%", 0),
-            "williams": (wr_display, wr_reason, 0),
+            "cmf": (cmf_display, cmf_reason, 0),
         },
         "sell_resonance": "—",
         "sell_resonance_cls": "neutral",
@@ -205,8 +195,8 @@ def generate_inverse_signal(
 ) -> dict:
     """反向型 ETF 的評分邏輯：所有指標方向相反（市場過熱才是加碼時機）。
 
-    RSI 超買 / Williams %R 超買 / 接近52週高點 / 高於MA60 → 加碼
-    RSI 超賣 / Williams %R 超賣 / 大幅距離高點 / 低於MA60  → 暫緩
+    RSI 超買 / CMF 資金流入過熱 / 接近52週高點 / 高於MA60 → 加碼
+    RSI 超賣 / CMF 資金流出賣壓 / 大幅距離高點 / 低於MA60  → 暫緩
     leverage > 1 時（如 3 倍反向 SQQQ），DD / MA60 閾值等比放大。
     """
     latest = df.iloc[-1]
@@ -273,25 +263,7 @@ def generate_inverse_signal(
     else:
         signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
 
-    wr_raw = latest["Williams_%R"]
-    if pd.isna(wr_raw):
-        signals["williams"] = ("正常", "橫盤無波動（W%R 無法計算）", 0)
-    else:
-        wr = float(wr_raw)
-        if wr >= WR_OVERBOUGHT:
-            signals["williams"] = (
-                "加碼",
-                f"市場極度超賣（反向ETF W%R {wr:.1f}，超買）",
-                1,
-            )
-        elif wr <= WR_OVERSOLD:
-            signals["williams"] = (
-                "暫緩",
-                f"市場極度上漲（反向ETF W%R {wr:.1f}，超賣）",
-                -1,
-            )
-        else:
-            signals["williams"] = ("正常", f"中性（{wr:.1f}）", 0)
+    signals["cmf"] = _classify_cmf(latest["CMF"], inverse=True)
 
     score = sum(v[2] for v in signals.values())
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)

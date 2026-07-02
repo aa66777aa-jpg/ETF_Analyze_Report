@@ -2,6 +2,7 @@ import pandas as pd
 import yfinance as yf
 
 from config import (
+    CMF_PERIOD,
     END_DATE,
     FETCH_START,
     HIGH_WINDOW,
@@ -9,7 +10,6 @@ from config import (
     MIN_TRADING_DAYS,
     RSI_PERIOD,
     START_DATE,
-    W_PERIOD,
 )
 
 
@@ -61,20 +61,23 @@ def _analyze_stock_impl(stock_id: str):
     df["High_252"] = price.rolling(window=HIGH_WINDOW, min_periods=60).max()
     df["Drawdown"] = (price - df["High_252"]) / df["High_252"] * 100
 
-    # --- 威廉指標 (Williams %R) ---
-    high_n = df["High"].rolling(window=W_PERIOD).max()
-    low_n = df["Low"].rolling(window=W_PERIOD).min()
-    range_n = high_n - low_n
-    # 區間小於收盤價 0.3%（或恰為零）時視為橫盤，設 NaN 避免誤判
-    range_n = range_n.where(
-        range_n / price.replace(0, float("nan")) >= 0.003, float("nan")
+    # --- 量比（當日量相對 20 日均量的倍數）---
+    df["Vol_Ratio"] = (
+        df["Volume"] / df["Volume"].rolling(window=MA_PERIODS[0], min_periods=10).mean()
     )
-    df["Williams_%R"] = ((high_n - price) / range_n) * -100
 
-    # --- 成交量比率（相對 20 日均量）---
-    df["Vol_MA20"] = df["Volume"].rolling(window=20, min_periods=5).mean()
-    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"].replace(0, float("nan"))).fillna(
-        1.0
+    # --- CMF (Chaikin Money Flow)：資金流量指標 ---
+    # 當日高低差 < 收盤價 0.3%（含 High/Low 缺值）視為橫盤或資料異常，
+    # 該日成交量自分子分母一併剔除，避免稀釋 20 日資金流量指標
+    hl_range = df["High"] - df["Low"]
+    flat_day = (hl_range.abs() < price * 0.003) | hl_range.isna()
+    mfm = ((price - df["Low"]) - (df["High"] - price)) / hl_range
+    mfm = mfm.mask(flat_day, 0).replace([float("inf"), float("-inf")], 0).fillna(0)
+    cmf_volume = df["Volume"].mask(flat_day, 0)
+    mfv = mfm * cmf_volume
+    df["CMF"] = (
+        mfv.rolling(window=CMF_PERIOD).sum()
+        / cmf_volume.rolling(window=CMF_PERIOD).sum()
     )
 
     df = df.dropna(subset=["RSI", "MA60", "MA120", "Drawdown"])

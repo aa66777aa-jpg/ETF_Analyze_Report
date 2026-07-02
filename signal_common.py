@@ -1,6 +1,8 @@
 import pandas as pd
 
 from config import (
+    CMF_OVERBOUGHT,
+    CMF_OVERSOLD,
     DD_MILD,
     DD_NEAR_HIGH,
     DD_STRONG,
@@ -9,8 +11,6 @@ from config import (
     MA60_LOW,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
-    WR_OVERBOUGHT,
-    WR_OVERSOLD,
 )
 
 
@@ -68,6 +68,33 @@ def _holding_info(stock_id: str, price: float) -> dict:
     }
 
 
+def _classify_cmf(cmf_raw, inverse: bool = False) -> tuple[str, str, int]:
+    """依 CMF（資金流量）分類為 (訊號, 說明, 分數)。
+
+    刻意採用與 RSI 相同的逆向（均值回歸）解讀：資金流出視為短期賣壓宣洩、
+    逢低承接機會；資金流入視為買盤過熱。這與 CMF 傳統上「順勢確認」的解讀
+    方向相反，是配合本工具「均值回歸」評分框架的刻意選擇。
+    inverse=True 時用於反向型 ETF，方向相反（本檔資金流入代表原型重挫）。
+    """
+    if pd.isna(cmf_raw):
+        return ("正常", "成交量不足（CMF 無法計算）", 0)
+    cmf = float(cmf_raw)
+    if inverse:
+        if cmf >= CMF_OVERBOUGHT:
+            return ("加碼", f"資金流入本檔（反向ETF CMF {cmf:.2f}，代表原型重挫）", 1)
+        elif cmf <= CMF_OVERSOLD:
+            return ("暫緩", f"資金流出本檔（反向ETF CMF {cmf:.2f}，代表原型走強）", -1)
+        else:
+            return ("正常", f"中性（CMF {cmf:.2f}）", 0)
+    else:
+        if cmf <= CMF_OVERSOLD:
+            return ("加碼", f"資金流出（CMF {cmf:.2f}，賣壓重）", 1)
+        elif cmf >= CMF_OVERBOUGHT:
+            return ("暫緩", f"資金流入（CMF {cmf:.2f}，買盤過熱）", -1)
+        else:
+            return ("正常", f"中性（CMF {cmf:.2f}）", 0)
+
+
 def _leverage_thresholds(leverage: float) -> tuple:
     """回傳 (lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high)。"""
     lev = max(leverage, 1.0)
@@ -111,9 +138,9 @@ def compute_historical_scores(
         scores += ((df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)).astype(int)
         scores -= (df["MA60_Dev"] >= ma60_high).astype(int)
 
-    wr = df["Williams_%R"]
-    wr_valid = wr.notna()
-    scores += sign * (wr_valid & (wr <= WR_OVERSOLD)).astype(int)
-    scores -= sign * (wr_valid & (wr >= WR_OVERBOUGHT)).astype(int)
+    cmf = df["CMF"]
+    cmf_valid = cmf.notna()
+    scores += sign * (cmf_valid & (cmf <= CMF_OVERSOLD)).astype(int)
+    scores -= sign * (cmf_valid & (cmf >= CMF_OVERBOUGHT)).astype(int)
 
     return scores

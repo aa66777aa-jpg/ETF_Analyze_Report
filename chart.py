@@ -3,17 +3,18 @@ import os
 from io import BytesIO
 
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from config import (
+    CMF_OVERBOUGHT,
+    CMF_OVERSOLD,
+    CMF_PERIOD,
     OUTPUT_DIR,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
     RSI_PERIOD,
     START_DATE,
     TODAY,
-    W_PERIOD,
-    WR_OVERBOUGHT,
-    WR_OVERSOLD,
     _OVERALL_COLOR,
     _safe_id,
 )
@@ -21,7 +22,7 @@ from signal_common import _leverage_thresholds, compute_historical_scores
 
 
 def plot_stock(stock_id: str, df, signal_info: dict) -> str:
-    """繪製四格子圖（均線+量 / RSI / Williams %R / 距高點跌幅）並存檔，回傳 base64 字串。"""
+    """繪製四格子圖（均線+量 / RSI / CMF 資金流量 / 距高點跌幅）並存檔，回傳 base64 字串。"""
     overall = signal_info["overall"]
     score = signal_info["score"]
     last_price = signal_info["price"]
@@ -171,32 +172,37 @@ def plot_stock(stock_id: str, df, signal_info: dict) -> str:
     ax2.legend(loc="upper left")
     ax2.grid(True, alpha=0.4)
 
-    # ── 圖三：Williams %R ────────────────────────────────
+    # ── 圖三：CMF 資金流量 ──────────────────────────────
     ax3.plot(
         df.index,
-        df["Williams_%R"],
-        label=f"Williams %R ({W_PERIOD})",
+        df["CMF"],
+        label=f"CMF ({CMF_PERIOD})",
         color="purple",
         linewidth=1.2,
     )
-    ax3.axhspan(-100, WR_OVERSOLD, color="#e63946", alpha=0.07)
-    ax3.axhspan(WR_OVERBOUGHT, 0, color="#2a9d8f", alpha=0.07)
+    ax3.axhspan(CMF_OVERBOUGHT, 1, color="#2a9d8f", alpha=0.07)
+    ax3.axhspan(-1, CMF_OVERSOLD, color="#e63946", alpha=0.07)
     ax3.axhline(
-        WR_OVERBOUGHT,
+        CMF_OVERBOUGHT,
         color="#2a9d8f",
         linestyle=":",
         linewidth=1,
-        label=f"超買 ({WR_OVERBOUGHT})",
+        label=f"資金流入過熱 ({CMF_OVERBOUGHT:+.2f})",
     )
     ax3.axhline(
-        WR_OVERSOLD,
+        CMF_OVERSOLD,
         color="#e63946",
         linestyle=":",
         linewidth=1,
-        label=f"超賣 ({WR_OVERSOLD})",
+        label=f"資金流出賣壓 ({CMF_OVERSOLD:+.2f})",
     )
-    ax3.set_ylabel("Williams %R")
-    ax3.set_ylim(-105, 5)
+    ax3.axhline(0, color="gray", linestyle="-", linewidth=0.5)
+    ax3.set_ylabel("CMF")
+    cmf_max_abs = df["CMF"].abs().max()
+    cmf_bound = (
+        min(1.0, max(0.6, float(cmf_max_abs) * 1.15)) if pd.notna(cmf_max_abs) else 0.6
+    )
+    ax3.set_ylim(-cmf_bound, cmf_bound)
     ax3.legend(loc="upper left")
     ax3.grid(True, alpha=0.4)
 

@@ -17,7 +17,9 @@ if __name__ == "__main__":
 
     results = []
     for sid, df in zip(STOCK_LIST, dfs):
-        if df is not None:
+        if df is None:
+            continue
+        try:
             if _is_index(sid):
                 signal_info = generate_index_context(df)
             elif _is_inverse(sid):
@@ -27,7 +29,10 @@ if __name__ == "__main__":
             else:
                 signal_info = generate_signal(df, sid, leverage=_get_leverage(sid))
             b64 = plot_stock(sid, df, signal_info)
-            results.append((sid, signal_info, b64))
+        except Exception as exc:
+            print(f"❌ {sid} 訊號計算或繪圖發生未預期錯誤，已跳過：{exc}")
+            continue
+        results.append((sid, signal_info, b64))
 
     if results:
         generate_html_report(results)

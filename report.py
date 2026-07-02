@@ -75,7 +75,7 @@ def _build_stock_html(
             f"{idx_td('rsi')}"
             f"{idx_td('drawdown')}"
             f"{idx_td('ma60')}"
-            f"{idx_td('williams')}"
+            f"{idx_td('cmf')}"
             f'<td class="neutral">—</td>'
             f'<td class="neutral">—</td>'
             f'<td class="neutral">—</td>'
@@ -97,7 +97,7 @@ def _build_stock_html(
             f"{sig_td('rsi')}"
             f"{sig_td('drawdown')}"
             f"{sig_td('ma60')}"
-            f"{sig_td('williams')}"
+            f"{sig_td('cmf')}"
             f'<td class="{sell_res_cls}">{sell_res}</td>'
             f"{holding_tds}"
             f"</tr>"

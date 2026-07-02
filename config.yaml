@@ -24,7 +24,7 @@ holdings:
     target_pct: 20
 
 # 槓桿型 ETF 倍數設定（距高點跌幅與 MA60 偏差閾值會等比放大，避免過早觸發）
-# RSI / Williams %R 是相對指標，不受影響
+# RSI / CMF 是相對指標，不受影響
 # 這裡列出的代號同時也要出現在 stock_list
 leverage_list:
   "00685L.TW": 2   # 群益臺灣加權正2

@@ -58,7 +58,7 @@ LEVERAGE_MAP: dict[str, float] = (
 LOOKBACK_DAYS = 365
 WARMUP_DAYS = 180
 RSI_PERIOD = 14
-W_PERIOD = 14
+CMF_PERIOD = 20  # CMF 慣例週期為 20（非跟隨 RSI 的 14），調整時需同步檢視下方 CMF 閾值
 MIN_TRADING_DAYS = 120
 MA_PERIODS = (20, 60, 120)
 HIGH_WINDOW = 252
@@ -70,8 +70,8 @@ DD_MILD = -8
 DD_NEAR_HIGH = -3
 MA60_LOW = -5
 MA60_HIGH = 8
-WR_OVERSOLD = -80
-WR_OVERBOUGHT = -20
+CMF_OVERSOLD = -0.15
+CMF_OVERBOUGHT = 0.15
 
 TODAY = date.today().isoformat()
 END_DATE = (date.today() + timedelta(days=1)).isoformat()

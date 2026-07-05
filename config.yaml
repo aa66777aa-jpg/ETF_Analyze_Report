@@ -21,7 +21,7 @@ holdings:
     target_pct: 20   # 目標獲利 %，不填預設 20
   "00685L.TW":
     cost: 326.5
-    target_pct: 20
+    target_pct: 10
 
 # 槓桿型 ETF 倍數設定（距高點跌幅與 MA60 偏差閾值會等比放大，避免過早觸發）
 # RSI / CMF 是相對指標，不受影響

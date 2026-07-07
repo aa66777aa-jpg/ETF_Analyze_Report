@@ -20,7 +20,7 @@ holdings:
     cost: 14.16       # 買入成本（元）
     target_pct: 20   # 目標獲利 %，不填預設 20
   "00685L.TW":
-    cost: 326.5
+    cost: 13.6
     target_pct: 10
 
 # 槓桿型 ETF 倍數設定（距高點跌幅與 MA60 偏差閾值會等比放大，避免過早觸發）

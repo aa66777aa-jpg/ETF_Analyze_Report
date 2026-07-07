@@ -73,6 +73,15 @@ MA60_HIGH = 8
 CMF_OVERSOLD = -0.15
 CMF_OVERBOUGHT = 0.15
 
+# 綜合評分：動能（RSI+跌幅+MA60）子分數上限，與 CMF 加權後的權重，
+# 兩者相加即為 _combine_score 的輸出；SCORE_STRONG_* 為「積極加碼／積極減碼」
+# 門檻，chart.py 的歷史買賣點標記與 signal_common._score_to_overall 共用同一組常數，
+# 避免評分公式調整時互相脫節。
+MOMENTUM_CAP = 2
+CMF_SCORE_WEIGHT = 2
+SCORE_STRONG_BUY = 3
+SCORE_STRONG_SELL = -3
+
 TODAY = date.today().isoformat()
 END_DATE = (date.today() + timedelta(days=1)).isoformat()
 START_DATE = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()

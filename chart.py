@@ -13,6 +13,8 @@ from config import (
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
     RSI_PERIOD,
+    SCORE_STRONG_BUY,
+    SCORE_STRONG_SELL,
     START_DATE,
     TODAY,
     _OVERALL_COLOR,
@@ -88,8 +90,8 @@ def plot_stock(stock_id: str, df, signal_info: dict) -> str:
     )
 
     h_scores = compute_historical_scores(df, is_inverse=is_inverse, leverage=leverage)
-    buy_idx = h_scores[h_scores >= 2].index
-    sell_idx = h_scores[h_scores <= -2].index
+    buy_idx = h_scores[h_scores >= SCORE_STRONG_BUY].index
+    sell_idx = h_scores[h_scores <= SCORE_STRONG_SELL].index
     if not buy_idx.empty:
         ax1.scatter(
             buy_idx,

@@ -3,28 +3,46 @@ import pandas as pd
 from config import (
     CMF_OVERBOUGHT,
     CMF_OVERSOLD,
+    CMF_SCORE_WEIGHT,
     DD_MILD,
     DD_NEAR_HIGH,
     DD_STRONG,
     HOLDINGS,
     MA60_HIGH,
     MA60_LOW,
+    MOMENTUM_CAP,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
+    SCORE_STRONG_BUY,
+    SCORE_STRONG_SELL,
 )
 
 
 def _score_to_overall(score: int) -> str:
-    if score >= 2:
+    if score >= SCORE_STRONG_BUY:
         return "積極加碼"
-    elif score == 1:
+    elif score == 2:
         return "考慮加碼"
-    elif score >= -2:
+    elif score >= -1:
         return "觀望"
-    elif score == -3:
-        return "考慮減碼"
-    else:
+    elif score <= SCORE_STRONG_SELL:
         return "積極減碼"
+    else:
+        return "考慮減碼"
+
+
+def _combine_score(signals: dict) -> int:
+    """將 RSI / 距高點跌幅 / MA60 偏差合併為單一「動能」子分數（上限 ±MOMENTUM_CAP），
+    再與 CMF（資金流，加權至同樣的量級）各佔一半權重相加。
+
+    RSI、距高點跌幅、MA60 偏差三項本質上都是價格動能的不同量尺、彼此高度相關，
+    若各自獨立計分再直接加總，等於把同一波漲跌重複計分三次；改為先合併、
+    再與資金流量（CMF，成交量面，資訊來源不同）各半加總，避免動能面訊號互相
+    疊加膨脹分數。接受完整 signals dict（而非個別分數）以避免呼叫端誤植參數順序。
+    """
+    momentum = signals["rsi"][2] + signals["drawdown"][2] + signals["ma60"][2]
+    momentum = max(-MOMENTUM_CAP, min(MOMENTUM_CAP, momentum))
+    return momentum + signals["cmf"][2] * CMF_SCORE_WEIGHT
 
 
 def _sell_resonance(signals: dict) -> tuple[str, str]:
@@ -111,32 +129,35 @@ def compute_historical_scores(
     is_inverse=True 時，所有訊號方向相反（反向型 ETF）。
     leverage > 1 時，DD 與 MA60 閾值等比放大（槓桿型 ETF）。
     """
-    scores = pd.Series(0, index=df.index, dtype=int)
     sign = -1 if is_inverse else 1
     lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
         leverage
     )
 
-    scores += sign * (df["RSI"] < RSI_OVERSOLD).astype(int)
-    scores -= sign * (df["RSI"] > RSI_OVERBOUGHT).astype(int)
+    momentum = pd.Series(0, index=df.index, dtype=int)
+    momentum += sign * (df["RSI"] < RSI_OVERSOLD).astype(int)
+    momentum -= sign * (df["RSI"] > RSI_OVERBOUGHT).astype(int)
 
-    scores += sign * (df["Drawdown"] <= dd_mild).astype(int)
-    scores += sign * (df["Drawdown"] <= dd_strong).astype(int)
-    scores -= sign * (df["Drawdown"] >= dd_near_high).astype(int)
+    dd_near_high_mask = (df["Drawdown"] >= dd_near_high).astype(int)
+    momentum += sign * (df["Drawdown"] <= dd_mild).astype(int)
+    momentum += sign * (df["Drawdown"] <= dd_strong).astype(int)
+    momentum -= sign * dd_near_high_mask
     if is_inverse:
-        scores += (df["Drawdown"] >= dd_near_high).astype(int)
+        momentum += dd_near_high_mask
 
     ma60_slope = df["MA60"].diff(20)
     if is_inverse:
-        scores += ((df["MA60_Dev"] >= ma60_high) & (ma60_slope > 0)).astype(int)
-        scores -= (df["MA60_Dev"] <= ma60_low).astype(int)
+        momentum += ((df["MA60_Dev"] >= ma60_high) & (ma60_slope > 0)).astype(int)
+        momentum -= (df["MA60_Dev"] <= ma60_low).astype(int)
     else:
-        scores += ((df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)).astype(int)
-        scores -= (df["MA60_Dev"] >= ma60_high).astype(int)
+        momentum += ((df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)).astype(int)
+        momentum -= (df["MA60_Dev"] >= ma60_high).astype(int)
 
     cmf = df["CMF"]
     cmf_valid = cmf.notna()
-    scores += sign * (cmf_valid & (cmf <= CMF_OVERSOLD)).astype(int)
-    scores -= sign * (cmf_valid & (cmf >= CMF_OVERBOUGHT)).astype(int)
+    cmf_pts = sign * (
+        (cmf_valid & (cmf <= CMF_OVERSOLD)).astype(int)
+        - (cmf_valid & (cmf >= CMF_OVERBOUGHT)).astype(int)
+    )
 
-    return scores
+    return momentum.clip(-MOMENTUM_CAP, MOMENTUM_CAP) + cmf_pts * CMF_SCORE_WEIGHT

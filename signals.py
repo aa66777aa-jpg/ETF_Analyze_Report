@@ -13,6 +13,7 @@ from config import (
 )
 from signal_common import (
     _classify_cmf,
+    _combine_score,
     _holding_info,
     _leverage_thresholds,
     _score_to_overall,
@@ -34,21 +35,23 @@ def generate_signal(
 ) -> dict:
     """根據最新一日數據判斷 ETF 定期投入的加碼時機。
 
-    評分邏輯（距高點跌幅最高 +2，其餘各項 -1 / 0 / +1）：
+    單項訊號（距高點跌幅最高 +2，其餘各項 -1 / 0 / +1）：
       +2 = 強力加碼訊號（距高點明顯回落，DD_STRONG）
       +1 = 加碼訊號（市場相對低估）
       -1 = 暫緩訊號（市場相對高估）
        0 = 正常
 
-    綜合建議：
-      score >= 2      → 積極加碼
-      score == 1      → 考慮加碼
-      -2 <= score <= 0 → 觀望
-      score == -3     → 考慮減碼
-      score <= -4     → 積極減碼
+    綜合分數計算見 _combine_score（動能子分數與 CMF 各半權重相加）。
 
-    最高分：+5（距高點明顯回落 +2，其餘三項均 +1）
-    最低分：-4（四項指標均 -1）
+    綜合建議：
+      score >= 3       → 積極加碼
+      score == 2       → 考慮加碼
+      -1 <= score <= 1 → 觀望
+      score == -2      → 考慮減碼
+      score <= -3      → 積極減碼
+
+    最高分：+4（動能子分數 +2 ＋ CMF 資金流出 +2）
+    最低分：-4（動能子分數 -2 ＋ CMF 資金流入過熱 -2）
     """
     latest = df.iloc[-1]
     price = float(latest["Close"])
@@ -116,7 +119,7 @@ def generate_signal(
 
     signals["cmf"] = _classify_cmf(latest["CMF"])
 
-    score = sum(v[2] for v in signals.values())
+    score = _combine_score(signals)
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)
 
     return {
@@ -196,6 +199,7 @@ def generate_inverse_signal(
     RSI 超買 / CMF 資金流入過熱 / 接近52週高點 / 高於MA60 → 加碼
     RSI 超賣 / CMF 資金流出賣壓 / 大幅距離高點 / 低於MA60  → 暫緩
     leverage > 1 時（如 3 倍反向 SQQQ），DD / MA60 閾值等比放大。
+    綜合分數計算與 generate_signal 相同，見 _combine_score。
     """
     latest = df.iloc[-1]
     price = float(latest["Close"])
@@ -263,7 +267,7 @@ def generate_inverse_signal(
 
     signals["cmf"] = _classify_cmf(latest["CMF"], inverse=True)
 
-    score = sum(v[2] for v in signals.values())
+    score = _combine_score(signals)
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)
 
     return {

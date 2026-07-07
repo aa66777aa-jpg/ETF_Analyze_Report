@@ -12,8 +12,6 @@ header p{font-size:.82rem;opacity:.65}
 .l-add-strong{color:#e63946;border:1.5px solid #e63946}
 .l-add{color:#f4a261;border:1.5px solid #f4a261}
 .l-neutral{color:#888;border:1.5px solid #ccc}
-.l-caution{color:#457b9d;border:1.5px solid #457b9d}
-.l-wait{color:#2a9d8f;border:1.5px solid #2a9d8f}
 
 /* 摘要表 */
 .summary{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;margin-bottom:28px}
@@ -29,7 +27,6 @@ td[title]{cursor:help}
 .add-strong{color:#e63946;font-weight:700}
 .add{color:#f4a261;font-weight:700}
 .neutral{color:#888888;font-weight:400}
-.caution{color:#457b9d;font-weight:600}
 .wait{color:#2a9d8f;font-weight:700}
 
 /* 賣出訊號顏色 */
@@ -52,7 +49,6 @@ td[title]{cursor:help}
 .card-header .add-strong{color:#ff6b7a}
 .card-header .add{color:#f4a261}
 .card-header .neutral{color:#aaa}
-.card-header .caution{color:#8ab4d4}
 .card-header .wait{color:#4ecdc4}
 .card-header .sell{color:#c77dff}
 .card-header .sell-strong{color:#d6a4ff}

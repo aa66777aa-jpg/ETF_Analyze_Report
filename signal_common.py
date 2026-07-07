@@ -19,12 +19,8 @@ def _score_to_overall(score: int) -> str:
         return "積極加碼"
     elif score == 1:
         return "考慮加碼"
-    elif score == 0:
-        return "正常定期投入"
-    elif score == -1:
-        return "謹慎觀察"
-    elif score == -2:
-        return "暫緩加碼"
+    elif score >= -2:
+        return "觀望"
     elif score == -3:
         return "考慮減碼"
     else:

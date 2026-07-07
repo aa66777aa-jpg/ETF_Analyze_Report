@@ -81,18 +81,14 @@ FETCH_START = (date.today() - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isofo
 _OVERALL_COLOR = {
     "積極加碼": "#e63946",
     "考慮加碼": "#f4a261",
-    "正常定期投入": "#888888",
-    "謹慎觀察": "#457b9d",
-    "暫緩加碼": "#2a9d8f",
+    "觀望": "#888888",
     "考慮減碼": "#9b5de5",
     "積極減碼": "#6a0572",
 }
 _OVERALL_CLASS = {
     "積極加碼": "add-strong",
     "考慮加碼": "add",
-    "正常定期投入": "neutral",
-    "謹慎觀察": "caution",
-    "暫緩加碼": "wait",
+    "觀望": "neutral",
     "考慮減碼": "sell",
     "積極減碼": "sell-strong",
 }

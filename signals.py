@@ -41,13 +41,11 @@ def generate_signal(
        0 = 正常
 
     綜合建議：
-      score >= 2  → 積極加碼
-      score == 1  → 考慮加碼
-      score == 0  → 正常定期投入
-      score == -1 → 謹慎觀察
-      score == -2 → 暫緩加碼
-      score == -3 → 考慮減碼
-      score <= -4 → 積極減碼
+      score >= 2      → 積極加碼
+      score == 1      → 考慮加碼
+      -2 <= score <= 0 → 觀望
+      score == -3     → 考慮減碼
+      score <= -4     → 積極減碼
 
     最高分：+5（距高點明顯回落 +2，其餘三項均 +1）
     最低分：-4（四項指標均 -1）
@@ -104,7 +102,7 @@ def generate_signal(
         else:
             signals["ma60"] = (
                 "正常",
-                f"低於 MA60 {abs(ma60_dev):.1f}%（均線下彎，謹慎觀察）",
+                f"低於 MA60 {abs(ma60_dev):.1f}%（均線下彎，正常）",
                 0,
             )
     elif ma60_dev >= ma60_high:

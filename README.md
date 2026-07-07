@@ -107,9 +107,10 @@ uv add <套件名>
 
 ```bash
 make help   # 顯示可用的 Makefile 指令
+make sync   # 同步安裝相依套件（uv sync）
 make lint   # ruff 檢查、格式化並清除 cache
 make run    # 執行 main.py（透過 uv 自動安裝相依套件）
-make all    # update → lint → run
+make all    # update → sync → lint → run
 make update # 更新 uv 本身
 ```
 

@@ -50,8 +50,8 @@ def generate_signal(
       score == -2      → 考慮減碼
       score <= -3      → 積極減碼
 
-    最高分：+4（動能子分數 +2 ＋ CMF 資金流出 +2）
-    最低分：-4（動能子分數 -2 ＋ CMF 資金流入過熱 -2）
+    最高分：+4（動能子分數 +2 ＋ CMF 資金流出力竭 +2）
+    最低分：-4（動能子分數 -2 ＋ CMF 資金流入過熱力竭 -2）
     """
     latest = df.iloc[-1]
     price = float(latest["Close"])
@@ -117,7 +117,7 @@ def generate_signal(
     else:
         signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
 
-    signals["cmf"] = _classify_cmf(latest["CMF"])
+    signals["cmf"] = _classify_cmf(df)
 
     score = _combine_score(signals)
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)
@@ -265,7 +265,7 @@ def generate_inverse_signal(
     else:
         signals["ma60"] = ("正常", f"MA60 偏差 {ma60_dev:+.1f}%", 0)
 
-    signals["cmf"] = _classify_cmf(latest["CMF"], inverse=True)
+    signals["cmf"] = _classify_cmf(df, inverse=True)
 
     score = _combine_score(signals)
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)

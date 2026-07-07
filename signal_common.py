@@ -3,6 +3,7 @@ import pandas as pd
 from config import (
     CMF_OVERBOUGHT,
     CMF_OVERSOLD,
+    CMF_PERIOD,
     CMF_SCORE_WEIGHT,
     DD_MILD,
     DD_NEAR_HIGH,
@@ -82,29 +83,73 @@ def _holding_info(stock_id: str, price: float) -> dict:
     }
 
 
-def _classify_cmf(cmf_raw, inverse: bool = False) -> tuple[str, str, int]:
+def _classify_cmf(df: pd.DataFrame, inverse: bool = False) -> tuple[str, str, int]:
     """依 CMF（資金流量）分類為 (訊號, 說明, 分數)。
 
     刻意採用與 RSI 相同的逆向（均值回歸）解讀：資金流出視為短期賣壓宣洩、
     逢低承接機會；資金流入視為買盤過熱。這與 CMF 傳統上「順勢確認」的解讀
     方向相反，是配合本工具「均值回歸」評分框架的刻意選擇。
-    inverse=True 時用於反向型 ETF，方向相反（本檔資金流入代表原型重挫）。
+
+    單純比較 CMF 絕對值容易在賣壓仍加速流出時「接刀」、或買盤仍強勁流入時
+    提早喊停，因此除了跨越 CMF_OVERSOLD / CMF_OVERBOUGHT 幅度門檻，還要求
+    「力竭確認」：CMF 相對 CMF_PERIOD 日前已經開始反轉（流出趨緩 / 流入趨緩），
+    且同期價格尚未搶先反應（仍偏弱 / 仍在高檔），才視為真正訊號，否則僅標記
+    為觀察中、不計分。inverse=True 時用於反向型 ETF，維持既有的加碼／暫緩
+    對應方向不變（本檔資金流入代表原型重挫），只是同樣套用力竭確認閘門。
     """
+    cmf_raw = df["CMF"].iloc[-1]
     if pd.isna(cmf_raw):
         return ("正常", "成交量不足（CMF 無法計算）", 0)
     cmf = float(cmf_raw)
+
+    cmf_delta = df["CMF"].diff(CMF_PERIOD).iloc[-1]
+    price_delta = df["Close"].diff(CMF_PERIOD).iloc[-1]
+    cmf_rising = pd.notna(cmf_delta) and cmf_delta > 0
+    cmf_falling = pd.notna(cmf_delta) and cmf_delta < 0
+    price_weak = pd.notna(price_delta) and price_delta <= 0
+    price_strong = pd.notna(price_delta) and price_delta >= 0
+
+    outflow_zone = cmf <= CMF_OVERSOLD
+    inflow_zone = cmf >= CMF_OVERBOUGHT
+    outflow_exhausted = outflow_zone and cmf_rising and price_weak
+    inflow_exhausted = inflow_zone and cmf_falling and price_strong
+
     if inverse:
-        if cmf >= CMF_OVERBOUGHT:
-            return ("加碼", f"資金流入本檔（反向ETF CMF {cmf:.2f}，代表原型重挫）", 1)
-        elif cmf <= CMF_OVERSOLD:
-            return ("暫緩", f"資金流出本檔（反向ETF CMF {cmf:.2f}，代表原型走強）", -1)
+        if inflow_exhausted:
+            return (
+                "加碼",
+                f"資金流入動能趨緩（反向ETF CMF {cmf:.2f}，原型賣壓見底跡象）",
+                1,
+            )
+        elif inflow_zone:
+            return ("正常", f"資金流入本檔中，動能仍強（反向ETF CMF {cmf:.2f}）", 0)
+        elif outflow_exhausted:
+            return (
+                "暫緩",
+                f"資金流出動能趨緩（反向ETF CMF {cmf:.2f}，原型走強跡象）",
+                -1,
+            )
+        elif outflow_zone:
+            return ("正常", f"資金流出本檔中，尚未止穩（反向ETF CMF {cmf:.2f}）", 0)
         else:
             return ("正常", f"中性（CMF {cmf:.2f}）", 0)
     else:
-        if cmf <= CMF_OVERSOLD:
-            return ("加碼", f"資金流出（CMF {cmf:.2f}，賣壓重）", 1)
-        elif cmf >= CMF_OVERBOUGHT:
-            return ("暫緩", f"資金流入（CMF {cmf:.2f}，買盤過熱）", -1)
+        if outflow_exhausted:
+            return (
+                "加碼",
+                f"資金流出後趨緩（CMF {cmf:.2f}，賣壓力竭跡象）",
+                1,
+            )
+        elif outflow_zone:
+            return ("正常", f"資金流出中，尚未止穩（CMF {cmf:.2f}）", 0)
+        elif inflow_exhausted:
+            return (
+                "暫緩",
+                f"資金流入動能趨緩（CMF {cmf:.2f}，追價風險仍在）",
+                -1,
+            )
+        elif inflow_zone:
+            return ("正常", f"資金持續流入中，動能仍強（CMF {cmf:.2f}）", 0)
         else:
             return ("正常", f"中性（CMF {cmf:.2f}）", 0)
 
@@ -155,9 +200,14 @@ def compute_historical_scores(
 
     cmf = df["CMF"]
     cmf_valid = cmf.notna()
-    cmf_pts = sign * (
-        (cmf_valid & (cmf <= CMF_OVERSOLD)).astype(int)
-        - (cmf_valid & (cmf >= CMF_OVERBOUGHT)).astype(int)
+    cmf_delta = cmf.diff(CMF_PERIOD)
+    price_delta = df["Close"].diff(CMF_PERIOD)
+    outflow_exhausted = (
+        cmf_valid & (cmf <= CMF_OVERSOLD) & (cmf_delta > 0) & (price_delta <= 0)
     )
+    inflow_exhausted = (
+        cmf_valid & (cmf >= CMF_OVERBOUGHT) & (cmf_delta < 0) & (price_delta >= 0)
+    )
+    cmf_pts = sign * (outflow_exhausted.astype(int) - inflow_exhausted.astype(int))
 
     return momentum.clip(-MOMENTUM_CAP, MOMENTUM_CAP) + cmf_pts * CMF_SCORE_WEIGHT

@@ -13,6 +13,13 @@ from config import (
 )
 
 
+# Yahoo Finance 對部分台股（尤其常態分割的槓桿型 ETF）偶爾未正確反映股票分割，
+# 導致收盤價序列出現單日暴漲暴跌的假跳空，使距高點跌幅、MA 偏差、RSI 等指標
+# 全部失真，可能誤判為「積極加碼」。台股單日漲跌幅上限為 10%，因此正常交易日
+# 不可能出現超過此倍數的單日價格跳動，一旦出現即視為資料異常。
+_SPLIT_JUMP_RATIO = 1.8
+
+
 def analyze_stock(stock_id: str):
     """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足或發生錯誤則回傳 None。"""
     try:
@@ -20,6 +27,11 @@ def analyze_stock(stock_id: str):
     except Exception as exc:
         print(f"❌ {stock_id} 發生未預期錯誤，已跳過：{exc}")
         return None
+
+
+def _has_unadjusted_split(price: pd.Series) -> bool:
+    ratio = (price / price.shift(1)).dropna()
+    return bool(((ratio >= _SPLIT_JUMP_RATIO) | (ratio <= 1 / _SPLIT_JUMP_RATIO)).any())
 
 
 def _analyze_stock_impl(stock_id: str):
@@ -36,6 +48,14 @@ def _analyze_stock_impl(stock_id: str):
         df.columns = df.columns.get_level_values(0)
 
     price = df["Close"]
+
+    if _has_unadjusted_split(price):
+        print(
+            f"⚠️  {stock_id} 偵測到單日價格跳動超過 "
+            f"{(_SPLIT_JUMP_RATIO - 1) * 100:.0f}%，疑似股票分割未被 Yahoo Finance "
+            "正確調整，資料不可信，已跳過。"
+        )
+        return None
 
     # --- RSI (Wilder's smoothing) ---
     delta = price.diff()

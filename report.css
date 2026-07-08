@@ -7,11 +7,11 @@ header p{font-size:.82rem;opacity:.65}
 
 /* 說明卡片 */
 .legend{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);padding:14px 20px;margin-bottom:20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-.legend span{font-size:.82rem;font-weight:600;padding:3px 10px;border-radius:12px}
-.legend-label{font-size:.78rem;color:#888;margin-right:4px}
-.l-add-strong{color:#c1121f;border:1.5px solid #c1121f}
-.l-add{color:#e63946;border:1.5px solid #e63946}
-.l-neutral{color:#888;border:1.5px solid #ccc}
+.legend span{font-size:.82rem;font-weight:700;padding:4px 12px;border-radius:12px}
+.legend-label{font-size:.78rem;color:#666;margin-right:4px}
+.l-add-strong{color:#fff;background:#9d0208}
+.l-add{color:#fff;background:#c1121f}
+.l-neutral{color:#fff;background:#5c5c5c}
 
 /* 摘要表 */
 .summary{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;margin-bottom:28px}
@@ -24,21 +24,21 @@ td.overall{font-size:.92rem}
 td[title]{cursor:help}
 
 /* 加碼訊號顏色（紅＝加碼；藍＝觀望，非多空方向） */
-.add-strong{color:#c1121f;font-weight:700}
-.add{color:#e63946;font-weight:700}
-.neutral{color:#888888;font-weight:400}
-.wait{color:#457b9d;font-weight:700}
+.add-strong{color:#9d0208;font-weight:700}
+.add{color:#c1121f;font-weight:700}
+.neutral{color:#5c5c5c;font-weight:400}
+.wait{color:#2f6690;font-weight:700}
 
 /* 減碼訊號顏色（綠＝減碼） */
-.sell{color:#2a9d8f;font-weight:700}
-.sell-strong{color:#087f5b;font-weight:700}
-.l-sell{color:#2a9d8f;border:1.5px solid #2a9d8f}
-.l-sell-strong{color:#087f5b;border:1.5px solid #087f5b}
+.sell{color:#1e7d6f;font-weight:700}
+.sell-strong{color:#065f45;font-weight:700}
+.l-sell{color:#fff;background:#1e7d6f}
+.l-sell-strong{color:#fff;background:#065f45}
 
 /* 持倉損益（紅＝獲利，綠＝虧損） */
-.pnl-pos{color:#e63946;font-weight:600}
-.pnl-neg{color:#2a9d8f;font-weight:600}
-.pnl-target{color:#f4a261;font-weight:700}
+.pnl-pos{color:#c1121f;font-weight:600}
+.pnl-neg{color:#1e7d6f;font-weight:600}
+.pnl-target{color:#92400e;font-weight:700}
 
 /* 圖表卡片 */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(620px,1fr));gap:20px}

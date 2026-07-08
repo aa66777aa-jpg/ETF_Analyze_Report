@@ -88,11 +88,11 @@ START_DATE = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
 FETCH_START = (date.today() - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isoformat()
 
 _OVERALL_COLOR = {
-    "積極加碼": "#c1121f",
-    "考慮加碼": "#e63946",
-    "觀望": "#888888",
-    "考慮減碼": "#2a9d8f",
-    "積極減碼": "#087f5b",
+    "積極加碼": "#9d0208",
+    "考慮加碼": "#c1121f",
+    "觀望": "#5c5c5c",
+    "考慮減碼": "#1e7d6f",
+    "積極減碼": "#065f45",
 }
 _OVERALL_CLASS = {
     "積極加碼": "add-strong",

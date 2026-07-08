@@ -9,8 +9,8 @@ header p{font-size:.82rem;opacity:.65}
 .legend{background:#fff;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.08);padding:14px 20px;margin-bottom:20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
 .legend span{font-size:.82rem;font-weight:600;padding:3px 10px;border-radius:12px}
 .legend-label{font-size:.78rem;color:#888;margin-right:4px}
-.l-add-strong{color:#e63946;border:1.5px solid #e63946}
-.l-add{color:#f4a261;border:1.5px solid #f4a261}
+.l-add-strong{color:#c1121f;border:1.5px solid #c1121f}
+.l-add{color:#e63946;border:1.5px solid #e63946}
 .l-neutral{color:#888;border:1.5px solid #ccc}
 
 /* 摘要表 */
@@ -23,19 +23,19 @@ td.sid{font-weight:600;font-family:monospace;font-size:.9rem}
 td.overall{font-size:.92rem}
 td[title]{cursor:help}
 
-/* 訊號顏色（台股慣例：紅=買機會，綠=過熱謹慎） */
-.add-strong{color:#e63946;font-weight:700}
-.add{color:#f4a261;font-weight:700}
+/* 加碼訊號顏色（紅＝加碼；藍＝觀望，非多空方向） */
+.add-strong{color:#c1121f;font-weight:700}
+.add{color:#e63946;font-weight:700}
 .neutral{color:#888888;font-weight:400}
-.wait{color:#2a9d8f;font-weight:700}
+.wait{color:#457b9d;font-weight:700}
 
-/* 賣出訊號顏色 */
-.sell{color:#9b5de5;font-weight:700}
-.sell-strong{color:#6a0572;font-weight:700}
-.l-sell{color:#9b5de5;border:1.5px solid #9b5de5}
-.l-sell-strong{color:#6a0572;border:1.5px solid #6a0572}
+/* 減碼訊號顏色（綠＝減碼） */
+.sell{color:#2a9d8f;font-weight:700}
+.sell-strong{color:#087f5b;font-weight:700}
+.l-sell{color:#2a9d8f;border:1.5px solid #2a9d8f}
+.l-sell-strong{color:#087f5b;border:1.5px solid #087f5b}
 
-/* 持倉損益（台股慣例：紅=獲利，綠=虧損） */
+/* 持倉損益（紅＝獲利，綠＝虧損） */
 .pnl-pos{color:#e63946;font-weight:600}
 .pnl-neg{color:#2a9d8f;font-weight:600}
 .pnl-target{color:#f4a261;font-weight:700}
@@ -47,11 +47,11 @@ td[title]{cursor:help}
 .card-header .sid{font-weight:700;font-size:.95rem;font-family:monospace;letter-spacing:.03em}
 .card-header .sig{font-size:.95rem;font-weight:700}
 .card-header .add-strong{color:#ff6b7a}
-.card-header .add{color:#f4a261}
+.card-header .add{color:#ffa8b6}
 .card-header .neutral{color:#aaa}
-.card-header .wait{color:#4ecdc4}
-.card-header .sell{color:#c77dff}
-.card-header .sell-strong{color:#d6a4ff}
+.card-header .wait{color:#7fb3d5}
+.card-header .sell{color:#4ecdc4}
+.card-header .sell-strong{color:#12b886}
 .card-meta{padding:8px 18px;font-size:.8rem;background:#f8f9fa;border-bottom:1px solid #f0f0f0;color:#555}
 .card img{width:100%;display:block}
 

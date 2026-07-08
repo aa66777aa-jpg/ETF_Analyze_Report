@@ -9,6 +9,7 @@ from config import (
     TODAY,
     _OVERALL_CLASS,
     _SIG_CLASS,
+    _build_css_vars,
 )
 
 
@@ -135,7 +136,7 @@ def generate_html_report(results: list[tuple[str, dict, str]]):
             css_content = f.read()
         template = template.replace(
             '<link rel="stylesheet" href="report.css">',
-            f"<style>\n{css_content}\n</style>",
+            f"<style>\n{_build_css_vars()}\n{css_content}\n</style>",
         )
 
     rows, cards = zip(*[_build_stock_html(sid, sig, b64) for sid, sig, b64 in results])

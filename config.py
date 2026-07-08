@@ -101,6 +101,34 @@ _OVERALL_CLASS = {
     "考慮減碼": "sell",
     "積極減碼": "sell-strong",
 }
+
+# CSS 類別名稱 → 對應的 _OVERALL_COLOR 鍵，用來產生 CSS 變數
+_CSS_VAR_MAP: dict[str, str] = {
+    cls: label for label, cls in _OVERALL_CLASS.items() if label in _OVERALL_COLOR
+}
+
+
+def _build_css_vars() -> str:
+    """依 _OVERALL_COLOR 產生 CSS :root 變數宣告字串。
+
+    供 report.py 在嵌入 report.css 時一併注入，
+    讓 CSS 色碼與 matplotlib 圖表共用同一組設定。
+
+    回傳範例：
+        :root {
+          --color-add-strong: #9d0208;
+          --color-add: #c1121f;
+          ...
+        }
+    """
+    lines = [":root {"]
+    for css_cls, label in _CSS_VAR_MAP.items():
+        color = _OVERALL_COLOR[label]
+        lines.append(f"  --color-{css_cls}: {color};")
+    lines.append("}")
+    return "\n".join(lines)
+
+
 _SIG_CLASS = {"加碼": "add", "暫緩": "wait", "正常": "neutral"}
 
 

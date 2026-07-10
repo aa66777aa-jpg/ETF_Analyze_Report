@@ -3,7 +3,7 @@ import pandas as pd
 from config import (
     CMF_OVERBOUGHT,
     CMF_OVERSOLD,
-    CMF_PERIOD,
+    CMF_REVERSAL_WINDOW,
     CMF_SCORE_WEIGHT,
     DD_MILD,
     DD_NEAR_HIGH,
@@ -11,6 +11,7 @@ from config import (
     HOLDINGS,
     MA60_HIGH,
     MA60_LOW,
+    MA60_SLOPE_WINDOW,
     MOMENTUM_CAP,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
@@ -93,6 +94,21 @@ def _holding_info(stock_id: str, price: float) -> dict:
     }
 
 
+def _cmf_exhaustion(cmf, cmf_delta, price_delta):
+    """判斷「力竭確認」：CMF 是否已跨越超賣/超買閾值，且相對
+    CMF_REVERSAL_WINDOW 日前已開始反轉，同期價格尚未搶先反應。
+
+    同時支援純量（float，供 _classify_cmf 逐日單一判斷）與向量化
+    （pd.Series，供 compute_historical_scores / compute_historical_buy_resonance
+    批次計算）兩種呼叫方式，避免三處各自重寫同一套判斷邏輯而互相脫節。
+    NaN 比較（>、<=...）在 Python 純量與 pandas 皆會自然回傳 False，
+    故不需額外的 notna 判斷。
+    """
+    outflow_exhausted = (cmf <= CMF_OVERSOLD) & (cmf_delta > 0) & (price_delta <= 0)
+    inflow_exhausted = (cmf >= CMF_OVERBOUGHT) & (cmf_delta < 0) & (price_delta >= 0)
+    return outflow_exhausted, inflow_exhausted
+
+
 def _classify_cmf(df: pd.DataFrame, inverse: bool = False) -> tuple[str, str, int]:
     """依 CMF（資金流量）分類為 (訊號, 說明, 分數)。
 
@@ -102,27 +118,24 @@ def _classify_cmf(df: pd.DataFrame, inverse: bool = False) -> tuple[str, str, in
 
     單純比較 CMF 絕對值容易在賣壓仍加速流出時「接刀」、或買盤仍強勁流入時
     提早喊停，因此除了跨越 CMF_OVERSOLD / CMF_OVERBOUGHT 幅度門檻，還要求
-    「力竭確認」：CMF 相對 CMF_PERIOD 日前已經開始反轉（流出趨緩 / 流入趨緩），
+    「力竭確認」：CMF 相對 CMF_REVERSAL_WINDOW 日前已經開始反轉（流出趨緩 / 流入趨緩），
     且同期價格尚未搶先反應（仍偏弱 / 仍在高檔），才視為真正訊號，否則僅標記
-    為觀察中、不計分。inverse=True 時用於反向型 ETF，維持既有的加碼／暫緩
-    對應方向不變（本檔資金流入代表原型重挫），只是同樣套用力竭確認閘門。
+    為觀察中、不計分。反轉回看天數刻意選用比 CMF_PERIOD 短的窗口——若兩者
+    相同，滾動窗口本身的長度會讓「相對 N 日前回升」與「仍在超賣/超買區」
+    幾乎不可能同時成立，回測顯示會讓此訊號形同虛設。inverse=True 時用於
+    反向型 ETF，維持既有的加碼／暫緩對應方向不變（本檔資金流入代表原型
+    重挫），只是同樣套用力竭確認閘門。
     """
     cmf_raw = df["CMF"].iloc[-1]
     if pd.isna(cmf_raw):
         return ("正常", "成交量不足（CMF 無法計算）", 0)
     cmf = float(cmf_raw)
 
-    cmf_delta = df["CMF"].diff(CMF_PERIOD).iloc[-1]
-    price_delta = df["Close"].diff(CMF_PERIOD).iloc[-1]
-    cmf_rising = pd.notna(cmf_delta) and cmf_delta > 0
-    cmf_falling = pd.notna(cmf_delta) and cmf_delta < 0
-    price_weak = pd.notna(price_delta) and price_delta <= 0
-    price_strong = pd.notna(price_delta) and price_delta >= 0
-
+    cmf_delta = df["CMF"].diff(CMF_REVERSAL_WINDOW).iloc[-1]
+    price_delta = df["Close"].diff(CMF_REVERSAL_WINDOW).iloc[-1]
+    outflow_exhausted, inflow_exhausted = _cmf_exhaustion(cmf, cmf_delta, price_delta)
     outflow_zone = cmf <= CMF_OVERSOLD
     inflow_zone = cmf >= CMF_OVERBOUGHT
-    outflow_exhausted = outflow_zone and cmf_rising and price_weak
-    inflow_exhausted = inflow_zone and cmf_falling and price_strong
 
     if inverse:
         if inflow_exhausted:
@@ -200,7 +213,7 @@ def compute_historical_scores(
     if is_inverse:
         momentum += dd_near_high_mask
 
-    ma60_slope = df["MA60"].diff(20)
+    ma60_slope = df["MA60"].diff(MA60_SLOPE_WINDOW)
     if is_inverse:
         momentum += ((df["MA60_Dev"] >= ma60_high) & (ma60_slope > 0)).astype(int)
         momentum -= (df["MA60_Dev"] <= ma60_low).astype(int)
@@ -209,15 +222,9 @@ def compute_historical_scores(
         momentum -= (df["MA60_Dev"] >= ma60_high).astype(int)
 
     cmf = df["CMF"]
-    cmf_valid = cmf.notna()
-    cmf_delta = cmf.diff(CMF_PERIOD)
-    price_delta = df["Close"].diff(CMF_PERIOD)
-    outflow_exhausted = (
-        cmf_valid & (cmf <= CMF_OVERSOLD) & (cmf_delta > 0) & (price_delta <= 0)
-    )
-    inflow_exhausted = (
-        cmf_valid & (cmf >= CMF_OVERBOUGHT) & (cmf_delta < 0) & (price_delta >= 0)
-    )
+    cmf_delta = cmf.diff(CMF_REVERSAL_WINDOW)
+    price_delta = df["Close"].diff(CMF_REVERSAL_WINDOW)
+    outflow_exhausted, inflow_exhausted = _cmf_exhaustion(cmf, cmf_delta, price_delta)
     cmf_pts = sign * (outflow_exhausted.astype(int) - inflow_exhausted.astype(int))
 
     return momentum.clip(-MOMENTUM_CAP, MOMENTUM_CAP) + cmf_pts * CMF_SCORE_WEIGHT
@@ -235,26 +242,22 @@ def compute_historical_buy_resonance(
     lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
         leverage
     )
-    ma60_slope = df["MA60"].diff(20)
+    ma60_slope = df["MA60"].diff(MA60_SLOPE_WINDOW)
     cmf = df["CMF"]
-    cmf_valid = cmf.notna()
-    cmf_delta = cmf.diff(CMF_PERIOD)
-    price_delta = df["Close"].diff(CMF_PERIOD)
+    cmf_delta = cmf.diff(CMF_REVERSAL_WINDOW)
+    price_delta = df["Close"].diff(CMF_REVERSAL_WINDOW)
+    outflow_exhausted, inflow_exhausted = _cmf_exhaustion(cmf, cmf_delta, price_delta)
 
     if is_inverse:
         rsi_buy = df["RSI"] > RSI_OVERBOUGHT
         dd_buy = df["Drawdown"] >= dd_near_high
         ma60_buy = (df["MA60_Dev"] >= ma60_high) & (ma60_slope > 0)
-        cmf_buy = (
-            cmf_valid & (cmf >= CMF_OVERBOUGHT) & (cmf_delta < 0) & (price_delta >= 0)
-        )
+        cmf_buy = inflow_exhausted
     else:
         rsi_buy = df["RSI"] < RSI_OVERSOLD
         dd_buy = df["Drawdown"] <= dd_mild
         ma60_buy = (df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)
-        cmf_buy = (
-            cmf_valid & (cmf <= CMF_OVERSOLD) & (cmf_delta > 0) & (price_delta <= 0)
-        )
+        cmf_buy = outflow_exhausted
 
     return (
         rsi_buy.astype(int)

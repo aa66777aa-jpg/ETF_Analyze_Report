@@ -59,9 +59,16 @@ LOOKBACK_DAYS = 365
 WARMUP_DAYS = 180
 RSI_PERIOD = 14
 CMF_PERIOD = 20  # CMF 慣例週期為 20（非跟隨 RSI 的 14），調整時需同步檢視下方 CMF 閾值
+# CMF 力竭確認用的反轉回看天數。與 CMF_PERIOD 一致的話，滾動窗口本身的長度會讓
+# 「相對 N 日前回升」幾乎不可能與「仍在超賣/超買區」同時成立（回測顯示實際
+# ETF 標的觸發率趨近於 0），故刻意縮短為短窗口，偵測超賣/超買區「內部」的短期回升
+CMF_REVERSAL_WINDOW = 5
 MIN_TRADING_DAYS = 120
 MA_PERIODS = (20, 60, 120)
 HIGH_WINDOW = 252
+# MA60 斜率回看天數。signals.py 的即時單日訊號與 signal_common.py 的歷史向量化
+# 計算共用此常數，避免兩處各自寫死天數而不同步（曾發生過兩者天數不一致）
+MA60_SLOPE_WINDOW = 10
 
 RSI_OVERSOLD = 35
 RSI_OVERBOUGHT = 70

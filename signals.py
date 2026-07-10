@@ -8,6 +8,7 @@ from config import (
     HIGH_WINDOW,
     MA60_HIGH,
     MA60_LOW,
+    MA60_SLOPE_WINDOW,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
 )
@@ -28,7 +29,7 @@ def _dd_note(df: pd.DataFrame) -> str:
 
 
 def _ma60_slope(df: pd.DataFrame) -> float:
-    return float(df["MA60"].iloc[-1]) - float(df["MA60"].iloc[-21])
+    return float(df["MA60"].iloc[-1]) - float(df["MA60"].iloc[-1 - MA60_SLOPE_WINDOW])
 
 
 def generate_signal(

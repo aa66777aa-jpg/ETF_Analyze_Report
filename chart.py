@@ -13,6 +13,8 @@ from config import (
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
     RSI_PERIOD,
+    SCORE_BUY,
+    SCORE_SELL,
     SCORE_STRONG_BUY,
     SCORE_STRONG_SELL,
     START_DATE,
@@ -20,7 +22,11 @@ from config import (
     _OVERALL_COLOR,
     _safe_id,
 )
-from signal_common import _leverage_thresholds, compute_historical_scores
+from signal_common import (
+    _leverage_thresholds,
+    compute_historical_buy_resonance,
+    compute_historical_scores,
+)
 
 
 def plot_stock(stock_id: str, df, signal_info: dict) -> str:
@@ -89,30 +95,81 @@ def plot_stock(stock_id: str, df, signal_info: dict) -> str:
         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=ann_color, alpha=0.8),
     )
 
+    # 歷史買賣點採三層標記（由淡到濃）：
+    #   買點：單一指標觸發（resonance>=1，門檻最寬鬆）< 考慮加碼（score==SCORE_BUY）
+    #        < 積極加碼（score>=SCORE_STRONG_BUY，門檻最嚴）
+    #   賣點：考慮減碼（score==SCORE_SELL）< 積極減碼（score<=SCORE_STRONG_SELL）
+    # 三層互斥（較嚴的門檻不會重複出現在較寬鬆那層），避免同一天疊加多個標記。
     h_scores = compute_historical_scores(df, is_inverse=is_inverse, leverage=leverage)
-    buy_idx = h_scores[h_scores >= SCORE_STRONG_BUY].index
-    sell_idx = h_scores[h_scores <= SCORE_STRONG_SELL].index
-    if not buy_idx.empty:
+    buy_resonance = compute_historical_buy_resonance(
+        df, is_inverse=is_inverse, leverage=leverage
+    )
+
+    strong_buy_idx = h_scores[h_scores >= SCORE_STRONG_BUY].index
+    mild_buy_idx = h_scores[h_scores == SCORE_BUY].index
+    weak_buy_idx = (
+        buy_resonance[buy_resonance >= 1]
+        .index.difference(strong_buy_idx)
+        .difference(mild_buy_idx)
+    )
+
+    strong_sell_idx = h_scores[h_scores <= SCORE_STRONG_SELL].index
+    mild_sell_idx = h_scores[h_scores == SCORE_SELL].index
+
+    if not weak_buy_idx.empty:
         ax1.scatter(
-            buy_idx,
-            df.loc[buy_idx, "Close"],
+            weak_buy_idx,
+            df.loc[weak_buy_idx, "Close"],
+            marker="o",
+            color="#e63946",
+            s=10,
+            alpha=0.18,
+            zorder=3,
+            label="單一訊號買點",
+        )
+    if not mild_buy_idx.empty:
+        ax1.scatter(
+            mild_buy_idx,
+            df.loc[mild_buy_idx, "Close"],
             marker="^",
             color="#e63946",
-            s=20,
-            alpha=0.45,
-            zorder=5,
-            label="歷史買入區",
+            s=16,
+            alpha=0.3,
+            zorder=4,
+            label="考慮加碼（歷史）",
         )
-    if not sell_idx.empty:
+    if not strong_buy_idx.empty:
         ax1.scatter(
-            sell_idx,
-            df.loc[sell_idx, "Close"],
+            strong_buy_idx,
+            df.loc[strong_buy_idx, "Close"],
+            marker="^",
+            color="#e63946",
+            s=24,
+            alpha=0.6,
+            zorder=5,
+            label="積極加碼（歷史）",
+        )
+    if not mild_sell_idx.empty:
+        ax1.scatter(
+            mild_sell_idx,
+            df.loc[mild_sell_idx, "Close"],
             marker="v",
             color="#9b5de5",
-            s=20,
-            alpha=0.45,
+            s=16,
+            alpha=0.3,
+            zorder=4,
+            label="考慮減碼（歷史）",
+        )
+    if not strong_sell_idx.empty:
+        ax1.scatter(
+            strong_sell_idx,
+            df.loc[strong_sell_idx, "Close"],
+            marker="v",
+            color="#9b5de5",
+            s=24,
+            alpha=0.6,
             zorder=5,
-            label="歷史賣出區",
+            label="積極減碼（歷史）",
         )
 
     _hi = signal_info.get("holding_info", {})

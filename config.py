@@ -81,6 +81,10 @@ MOMENTUM_CAP = 2
 CMF_SCORE_WEIGHT = 2
 SCORE_STRONG_BUY = 3
 SCORE_STRONG_SELL = -3
+# 「考慮加碼／考慮減碼」門檻，對應 _score_to_overall 的中間分類，
+# chart.py 歷史買賣點標記的第二層（較淡）也共用這組常數。
+SCORE_BUY = 2
+SCORE_SELL = -2
 
 TODAY = date.today().isoformat()
 END_DATE = (date.today() + timedelta(days=1)).isoformat()

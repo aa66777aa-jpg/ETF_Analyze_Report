@@ -14,6 +14,7 @@ from config import (
     MOMENTUM_CAP,
     RSI_OVERBOUGHT,
     RSI_OVERSOLD,
+    SCORE_BUY,
     SCORE_STRONG_BUY,
     SCORE_STRONG_SELL,
 )
@@ -22,7 +23,7 @@ from config import (
 def _score_to_overall(score: int) -> str:
     if score >= SCORE_STRONG_BUY:
         return "積極加碼"
-    elif score == 2:
+    elif score == SCORE_BUY:
         return "考慮加碼"
     elif score >= -1:
         return "觀望"
@@ -46,16 +47,25 @@ def _combine_score(signals: dict) -> int:
     return momentum + signals["cmf"][2] * CMF_SCORE_WEIGHT
 
 
-def _sell_resonance(signals: dict) -> tuple[str, str]:
-    sell_count = sum(1 for v in signals.values() if v[0] == "暫緩")
-    if sell_count >= 3:
-        return f"強力共振 ({sell_count}/4)", "sell-strong"
-    elif sell_count >= 2:
-        return f"共振 ({sell_count}/4)", "sell"
-    elif sell_count == 1:
-        return f"{sell_count}/4", "neutral"
+def _resonance(signals: dict, target_sig: str, cls_prefix: str) -> tuple[str, str]:
+    count = sum(1 for v in signals.values() if v[0] == target_sig)
+    if count >= 3:
+        return f"強力共振 ({count}/4)", f"{cls_prefix}-strong"
+    elif count >= 2:
+        return f"共振 ({count}/4)", cls_prefix
+    elif count == 1:
+        return f"{count}/4", "neutral"
     else:
         return "—", "neutral"
+
+
+def _sell_resonance(signals: dict) -> tuple[str, str]:
+    return _resonance(signals, "暫緩", "sell")
+
+
+def _buy_resonance(signals: dict) -> tuple[str, str]:
+    """買點共振：邏輯與 _sell_resonance 對稱，以紅色（add）系列標示。"""
+    return _resonance(signals, "加碼", "add")
 
 
 def _holding_info(stock_id: str, price: float) -> dict:
@@ -211,3 +221,44 @@ def compute_historical_scores(
     cmf_pts = sign * (outflow_exhausted.astype(int) - inflow_exhausted.astype(int))
 
     return momentum.clip(-MOMENTUM_CAP, MOMENTUM_CAP) + cmf_pts * CMF_SCORE_WEIGHT
+
+
+def compute_historical_buy_resonance(
+    df: pd.DataFrame, is_inverse: bool = False, leverage: float = 1.0
+) -> pd.Series:
+    """向量化計算歷史每日「加碼」個別指標觸發數（0~4），供圖表標記較寬鬆的
+    單一訊號買點使用。與 _buy_resonance 採用同一套個別指標定義（RSI / 距高點
+    跌幅 / MA60 偏差 / CMF 是否各自判定為「加碼」），但不經過 compute_historical_scores
+    的動能上限與 CMF 加權換算，直接計數原始指標數量，門檻較 compute_historical_scores
+    寬鬆許多。is_inverse=True 時方向相反（反向型 ETF）。
+    """
+    lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
+        leverage
+    )
+    ma60_slope = df["MA60"].diff(20)
+    cmf = df["CMF"]
+    cmf_valid = cmf.notna()
+    cmf_delta = cmf.diff(CMF_PERIOD)
+    price_delta = df["Close"].diff(CMF_PERIOD)
+
+    if is_inverse:
+        rsi_buy = df["RSI"] > RSI_OVERBOUGHT
+        dd_buy = df["Drawdown"] >= dd_near_high
+        ma60_buy = (df["MA60_Dev"] >= ma60_high) & (ma60_slope > 0)
+        cmf_buy = (
+            cmf_valid & (cmf >= CMF_OVERBOUGHT) & (cmf_delta < 0) & (price_delta >= 0)
+        )
+    else:
+        rsi_buy = df["RSI"] < RSI_OVERSOLD
+        dd_buy = df["Drawdown"] <= dd_mild
+        ma60_buy = (df["MA60_Dev"] <= ma60_low) & (ma60_slope > 0)
+        cmf_buy = (
+            cmf_valid & (cmf <= CMF_OVERSOLD) & (cmf_delta > 0) & (price_delta <= 0)
+        )
+
+    return (
+        rsi_buy.astype(int)
+        + dd_buy.astype(int)
+        + ma60_buy.astype(int)
+        + cmf_buy.astype(int)
+    )

@@ -34,6 +34,8 @@ def _build_stock_html(
 
     sell_res = signal_info.get("sell_resonance", "—")
     sell_res_cls = signal_info.get("sell_resonance_cls", "neutral")
+    buy_res = signal_info.get("buy_resonance", "—")
+    buy_res_cls = signal_info.get("buy_resonance_cls", "neutral")
 
     holding_info = signal_info.get("holding_info", {})
     if holding_info:
@@ -49,6 +51,8 @@ def _build_stock_html(
         holding_tds = '<td class="neutral">—</td><td class="neutral">—</td>'
 
     meta_parts = []
+    if buy_res != "—":
+        meta_parts.append(f'買點共振：<span class="{buy_res_cls}">{buy_res}</span>')
     if sell_res != "—":
         meta_parts.append(f'賣點共振：<span class="{sell_res_cls}">{sell_res}</span>')
     if holding_info:
@@ -80,6 +84,7 @@ def _build_stock_html(
             f'<td class="neutral">—</td>'
             f'<td class="neutral">—</td>'
             f'<td class="neutral">—</td>'
+            f'<td class="neutral">—</td>'
             f"</tr>"
         )
     else:
@@ -99,6 +104,7 @@ def _build_stock_html(
             f"{sig_td('drawdown')}"
             f"{sig_td('ma60')}"
             f"{sig_td('cmf')}"
+            f'<td class="{buy_res_cls}">{buy_res}</td>'
             f'<td class="{sell_res_cls}">{sell_res}</td>'
             f"{holding_tds}"
             f"</tr>"

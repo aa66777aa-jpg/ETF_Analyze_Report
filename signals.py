@@ -12,6 +12,7 @@ from config import (
     RSI_OVERSOLD,
 )
 from signal_common import (
+    _buy_resonance,
     _classify_cmf,
     _combine_score,
     _holding_info,
@@ -121,6 +122,7 @@ def generate_signal(
 
     score = _combine_score(signals)
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)
+    buy_resonance, buy_resonance_cls = _buy_resonance(signals)
 
     return {
         "signals": signals,
@@ -129,6 +131,8 @@ def generate_signal(
         "price": price,
         "sell_resonance": sell_resonance,
         "sell_resonance_cls": sell_resonance_cls,
+        "buy_resonance": buy_resonance,
+        "buy_resonance_cls": buy_resonance_cls,
         "holding_info": _holding_info(stock_id, price),
         "is_inverse": False,
         "leverage": lev,
@@ -187,6 +191,8 @@ def generate_index_context(df: pd.DataFrame) -> dict:
         },
         "sell_resonance": "—",
         "sell_resonance_cls": "neutral",
+        "buy_resonance": "—",
+        "buy_resonance_cls": "neutral",
         "holding_info": {},
     }
 
@@ -269,6 +275,7 @@ def generate_inverse_signal(
 
     score = _combine_score(signals)
     sell_resonance, sell_resonance_cls = _sell_resonance(signals)
+    buy_resonance, buy_resonance_cls = _buy_resonance(signals)
 
     return {
         "signals": signals,
@@ -277,6 +284,8 @@ def generate_inverse_signal(
         "price": price,
         "sell_resonance": sell_resonance,
         "sell_resonance_cls": sell_resonance_cls,
+        "buy_resonance": buy_resonance,
+        "buy_resonance_cls": buy_resonance_cls,
         "holding_info": _holding_info(stock_id, price),
         "is_inverse": True,
         "leverage": lev,

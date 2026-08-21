@@ -27,10 +27,10 @@ GitHub Pages 報告：
 
 | 類型 | 設定方式 | 評分邏輯 |
 |------|---------|---------|
-| **一般 ETF / 個股** | 直接加入 `stock_list` | 標準邏輯（市場回落時加碼） |
-| **槓桿型 ETF**（如正 2 倍）| `leverage_list` 設定倍數 | DD / MA60 閾值等比放大，避免槓桿型 ETF 過早觸發 |
-| **反向型 ETF** | `inverse_list` 列出代號 | 所有訊號方向相反（市場過熱才是加碼時機） |
-| **指數**（`^` 開頭） | 直接加入 `stock_list` | 不給買賣建議，改輸出市場環境（偏多 / 中性 / 偏空） |
+| **一般 ETF / 個股** | 執行時直接輸入代號 | 標準邏輯（市場回落時加碼） |
+| **槓桿型 ETF**（如正 2 倍）| `config.yaml` 的 `leverage_list` 設定倍數 | DD / MA60 閾值等比放大，避免槓桿型 ETF 過早觸發 |
+| **反向型 ETF** | `config.yaml` 的 `inverse_list` 列出代號 | 所有訊號方向相反（市場過熱才是加碼時機） |
+| **指數**（`^` 開頭） | 執行時輸入帶 `^` 前綴的代號 | 不給買賣建議，改輸出市場環境（偏多 / 中性 / 偏空） |
 
 **綜合評分（-4 ~ +4，動能子分數與 CMF 資金流各佔一半權重）：**
 
@@ -92,11 +92,23 @@ uv sync
 
 ### 執行分析
 
+股票代號在**執行時指定**，支援 CLI 參數與互動輸入兩種模式：
+
 ```bash
+# 方式一：直接傳參數（以空格或逗號分隔）
+uv run python main.py 00735.TW 009816.TW ^TWII
+
+# 方式二：逗號分隔寫法
+uv run python main.py 00735.TW,009816.TW,^TWII
+
+# 方式三：互動輸入模式（不帶參數，程式會提示輸入）
 uv run python main.py
 ```
 
 > 不需要先 activate 虛擬環境，`uv run` 會自動使用 `.venv`。
+>
+> `^` 開頭的代號視為指數，僅顯示市場環境，不給加碼建議。
+> 反向型 / 槓桿型 ETF 請維護 `config.yaml` 中的 `inverse_list` / `leverage_list`，輸入對應代號時會自動套用。
 
 ### 新增套件
 
@@ -119,22 +131,16 @@ make update # 更新 uv 本身
 
 所有常用設定集中於 [config.yaml](config.yaml)，**不需要修改任何 Python 檔案**。
 
-### 觀察清單
-
-```yaml
-stock_list:
-  - "009816.TW"   # 國泰台灣 50 ETF
-  - "^TWII"       # 台灣加權指數（市場環境參考）
-  # 繼續新增...
-```
-
 ### 持倉成本追蹤
 
 ```yaml
 holdings:
   "009816.TW":
-    cost: 16.5       # 買入成本（元）
+    cost: 14.16      # 買入成本（元）
     target_pct: 20   # 目標獲利 %（不填預設 20）
+  "00685L.TW":
+    cost: 12.06
+    target_pct: 10
 ```
 
 填入後，報告會自動顯示持倉損益、停利進度，圖表也會畫出成本線與停利目標線。不追蹤的股票直接省略即可。
@@ -147,17 +153,17 @@ leverage_list:
   # "TQQQ": 3       # 那斯達克三倍正向
 ```
 
-RSI 與 CMF 是相對指標，不受槓桿倍數影響。`leverage_list` 中的代號同時也要出現在 `stock_list`。
+RSI 與 CMF 是相對指標，不受槓桿倍數影響。`leverage_list` 中的代號在執行時須一併輸入。
 
 ### 反向型 ETF
 
 ```yaml
 inverse_list:
-  - "00632R.TW"   # 富邦台灣加權反1
+  - "00632R.TW"   # 元大台灣50反1
   # - "SQQQ"       # 那斯達克三倍反向
 ```
 
-反向 ETF 的評分邏輯全部翻轉：市場過熱（RSI 高、接近高點、高於 MA60、CMF 資金流入過熱）才是加碼時機；市場大跌（RSI 低、遠離高點）反而是暫緩訊號。`inverse_list` 中的代號同時也要出現在 `stock_list`。
+反向 ETF 的評分邏輯全部翻轉：市場過熱（RSI 高、接近高點、高於 MA60、CMF 資金流入過熱）才是加碼時機；市場大跌（RSI 低、遠離高點）反而是暫緩訊號。`inverse_list` 中的代號在執行時須一併輸入。
 
 ### 技術指標參數
 
@@ -168,6 +174,10 @@ inverse_list:
 - 台股個股：`2330.TW`
 - 美股指數：`^GSPC`、`^IXIC`
 - 美股個股：`AAPL`、`TSLA`
+
+### 資料品質檢查
+
+程式會自動偵測 Yahoo Finance 資料中的異常跳動（單日漲跌超過 80%），判定為疑似股票分割未被正確調整，該標的將被跳過並顯示警告訊息，避免指標全面失真。
 
 ## 圖表內容
 
@@ -261,14 +271,14 @@ CMF 範圍約在 -1 ~ +1 之間，數值代表近期資金流入（正）或流�
 
 ```
 ETF_Analyze_Report/
-├── config.yaml              # ✏️ 使用者設定：觀察清單、持倉成本追蹤
-├── config.py                # 常數、閾值、config.yaml 載入、工具函式
-├── analysis.py              # 股價下載與技術指標計算
-├── signal_common.py         # 共用評分工具（閾值縮放、持倉計算、歷史評分）
+├── config.yaml              # ✏️ 使用者設定：持倉成本、槓桿/反向 ETF 清單
+├── config.py                # 常數、閾值、config.yaml 載入、股票代號輸入解析
+├── analysis.py              # 股價下載與技術指標計算（含資料品質檢查）
+├── signal_common.py         # 共用評分工具（閾值縮放、持倉計算、歷史評分、CMF力竭確認）
 ├── signals.py               # 訊號產生器（正向 / 反向 / 指數）
 ├── chart.py                 # matplotlib 繪圖
 ├── report.py                # HTML 報告生成
-├── main.py                  # 進入點：串接各模組、多執行緒下載
+├── main.py                  # 進入點：解析股票代號、多執行緒下載、串接各模組
 ├── report_template.html     # HTML 報告模板（%%佔位符%%由程式替換）
 ├── report.css               # 報告樣式表（執行時自動內嵌至 docs/index.html）
 ├── Makefile                 # 常用指令：lint / run / all / update
@@ -298,10 +308,16 @@ Checkout repo
   → 清除 matplotlib 字體快取
   → uv run python main.py（啟動時自動清除 Report/ 舊 PNG 暫存檔）
   → git add Report/ docs/index.html
-  → git commit & push
+  → git commit & push（使用 --force-with-lease 安全覆蓋）
 ```
 
 手動觸發：GitHub repo → Actions → Daily ETF Analysis → **Run workflow**
+
+> **注意**：目前 GitHub Actions 工作流程中 `main.py` 未帶股票代號參數，在 CI 環境（無互動輸入）下會因 `EOFError` 自動退出。若需在 CI 中自動執行，請在 `daily-etf.yml` 的 `Run ETF analysis` 步驟加上要分析的代號，例如：
+> ```yaml
+> - name: Run ETF analysis
+>   run: uv run python main.py 00735.TW 009816.TW ^TWII
+> ```
 
 ## 依賴套件
 
@@ -319,6 +335,10 @@ Checkout repo
 
 A：可能原因：(1) 股票代號拼錯、(2) Yahoo Finance 暫時無法連線、(3) 該股票已下市或停牌。確認代號格式後重試。
 
+**Q：執行時出現「疑似股票分割未被 Yahoo Finance 正確調整」是什麼意思？**
+
+A：Yahoo Finance 對部分台股（尤其常態分割的槓桿型 ETF）偶爾未正確反映股票分割，導致收盤價序列出現單日暴漲暴跌的假跳空。程式會自動偵測單日漲跌超過 80% 的異常跳動，將該標的視為資料不可信並跳過，以避免指標全面失真。
+
 **Q：為什麼某支股票的 CMF 顯示「資料不足」？**
 
 A：CMF 需要過去 20 個交易日的成交量資料才能計算，若該股票上市未滿 20 個交易日或成交量資料缺漏，程式會將 CMF 設為 NaN 並計為中性。
@@ -326,6 +346,10 @@ A：CMF 需要過去 20 個交易日的成交量資料才能計算，若該股�
 **Q：為什麼 MA60 低於 5% 但建議顯示「觀望」而非「加碼」？**
 
 A：程式加入了均線斜率過濾：若 MA60 在近 10 個交易日呈現下彎（斜率為負），即使價格跌破 MA60，也視為下跌趨勢中的回踩，不給加碼訊號。
+
+**Q：為什麼 CMF 已低於 -0.15 但訊號顯示「觀察中」而非「加碼」？**
+
+A：CMF 除了跨越閾值，還需通過「力竭確認」：CMF 須相對 5 日前已開始回升（流出趨緩），且同期收盤價未見反彈（仍偏弱），才視為賣壓力竭給出加碼訊號。若只是跨過閾值但尚未同時滿足兩個力竭條件，僅標記為觀察中（0 分）。
 
 **Q：GitHub Actions 執行失敗怎麼辦？**
 

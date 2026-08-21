@@ -3,12 +3,12 @@ from datetime import datetime, timedelta, timezone
 
 from config import (
     _BASE,
+    _OVERALL_CLASS,
+    _SIG_CLASS,
     DOCS_DIR,
     LOOKBACK_DAYS,
     START_DATE,
     TODAY,
-    _OVERALL_CLASS,
-    _SIG_CLASS,
     _build_css_vars,
 )
 

@@ -12,7 +12,6 @@ from config import (
     START_DATE,
 )
 
-
 # Yahoo Finance 對部分台股（尤其常態分割的槓桿型 ETF）偶爾未正確反映股票分割，
 # 導致收盤價序列出現單日暴漲暴跌的假跳空，使距高點跌幅、MA 偏差、RSI 等指標
 # 全部失真，可能誤判為「積極加碼」。台股單日漲跌幅上限為 10%，因此正常交易日
@@ -24,7 +23,7 @@ def analyze_stock(stock_id: str):
     """下載並計算單支股票的技術指標，回傳 DataFrame；若資料不足或發生錯誤則回傳 None。"""
     try:
         return _analyze_stock_impl(stock_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"❌ {stock_id} 發生未預期錯誤，已跳過：{exc}")
         return None
 

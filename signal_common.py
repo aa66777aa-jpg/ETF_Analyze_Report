@@ -198,7 +198,7 @@ def compute_historical_scores(
     leverage > 1 時，DD 與 MA60 閾值等比放大（槓桿型 ETF）。
     """
     sign = -1 if is_inverse else 1
-    lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
+    _lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
         leverage
     )
 
@@ -239,7 +239,7 @@ def compute_historical_buy_resonance(
     的動能上限與 CMF 加權換算，直接計數原始指標數量，門檻較 compute_historical_scores
     寬鬆許多。is_inverse=True 時方向相反（反向型 ETF）。
     """
-    lev, dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
+    _lev, _dd_strong, dd_mild, dd_near_high, ma60_low, ma60_high = _leverage_thresholds(
         leverage
     )
     ma60_slope = df["MA60"].diff(MA60_SLOPE_WINDOW)

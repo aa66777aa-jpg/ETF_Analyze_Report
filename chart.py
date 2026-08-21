@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from config import (
+    _OVERALL_COLOR,
     CMF_OVERBOUGHT,
     CMF_OVERSOLD,
     CMF_PERIOD,
@@ -19,7 +20,6 @@ from config import (
     SCORE_STRONG_SELL,
     START_DATE,
     TODAY,
-    _OVERALL_COLOR,
     _safe_id,
 )
 from signal_common import (
@@ -92,7 +92,12 @@ def plot_stock(stock_id: str, df, signal_info: dict) -> str:
         ha="right",
         fontsize=9,
         color=ann_color,
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=ann_color, alpha=0.8),
+        bbox={
+            "boxstyle": "round,pad=0.3",
+            "fc": "white",
+            "ec": ann_color,
+            "alpha": 0.8,
+        },
     )
 
     # 歷史買賣點採三層標記（由淡到濃）：

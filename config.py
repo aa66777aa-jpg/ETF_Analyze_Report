@@ -1,9 +1,11 @@
 import os
-from datetime import date, timedelta
+import re
+import sys
+from datetime import UTC, datetime, timedelta
 
-import yaml
 import matplotlib
 import matplotlib.font_manager as _fm
+import yaml
 
 _CJK_KEYWORDS = ("NotoSansCJK", "wqy", "WenQuanYi", "NotoSans")
 for _fp in _fm.findSystemFonts():
@@ -41,11 +43,6 @@ except FileNotFoundError:
         f"[ERROR] 找不到設定檔：{_cfg_path}\n請參考 README 建立 config.yaml。"
     )
 
-STOCK_LIST: list[str] = _cfg.get("stock_list") or []
-if not STOCK_LIST:
-    raise SystemExit(
-        "[ERROR] config.yaml 中 stock_list 為空或未設定，請至少填入一支股票代號。"
-    )
 _holdings_raw = _cfg.get("holdings")
 HOLDINGS: dict[str, dict] = _holdings_raw if isinstance(_holdings_raw, dict) else {}
 _inverse_raw = _cfg.get("inverse_list")
@@ -54,6 +51,76 @@ _leverage_raw = _cfg.get("leverage_list")
 LEVERAGE_MAP: dict[str, float] = (
     _leverage_raw if isinstance(_leverage_raw, dict) else {}
 )
+
+# Yahoo Finance 股票代號的基本格式驗證（允許 ^指數、台股 .TW/.TWO、美股英文數字）
+_TICKER_RE = re.compile(r"^\^?[A-Za-z0-9][\w.\-]{0,19}$")
+
+
+def _validate_ticker(ticker: str) -> str | None:
+    """驗證並正規化單一股票代號，回傳正規化後的代號或 None。"""
+    t = ticker.strip()
+    if not t:
+        return None
+    if _TICKER_RE.match(t):
+        return t
+    return None
+
+
+def parse_stock_input() -> list[str]:
+    """從 CLI 參數或互動輸入取得股票代號清單。
+
+    使用方式：
+      python main.py 00735.TW 009816.TW ^TWII    ← 直接傳參數
+      python main.py                              ← 互動輸入模式（以逗號或空白分隔）
+    """
+    # 1. 優先使用 CLI 參數
+    args = sys.argv[1:]
+    if args:
+        tickers: list[str] = []
+        for arg in args:
+            # 支援逗號分隔的寫法，例如 "00735.TW,009816.TW"
+            for part in arg.split(","):
+                t = _validate_ticker(part)
+                if t:
+                    tickers.append(t)
+                elif part.strip():
+                    print(f"⚠️  略過無效代號：{part.strip()}")
+        if tickers:
+            return tickers
+        raise SystemExit("[ERROR] 未提供有效的股票代號。")
+
+    # 2. 互動輸入模式
+    print("=" * 50)
+    print("📊 ETF 定期投入時機分析")
+    print("=" * 50)
+    print("請輸入要查詢的股票代號（以逗號或空白分隔）")
+    print("指數請加 ^ 前綴（如 ^TWII），輸入完畢按 Enter")
+    print("範例：00735.TW, 009816.TW, ^TWII")
+    print("-" * 50)
+
+    try:
+        raw = input("👉 股票代號：").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit("\n已取消。")
+
+    if not raw:
+        raise SystemExit("[ERROR] 未輸入任何股票代號。")
+
+    # 同時支援逗號與空白分隔
+    parts = re.split(r"[,\s]+", raw)
+    tickers = []
+    for part in parts:
+        t = _validate_ticker(part)
+        if t:
+            tickers.append(t)
+        elif part.strip():
+            print(f"⚠️  略過無效代號：{part}")
+
+    if not tickers:
+        raise SystemExit("[ERROR] 未提供有效的股票代號。")
+
+    return tickers
+
 
 LOOKBACK_DAYS = 365
 WARMUP_DAYS = 180
@@ -93,10 +160,11 @@ SCORE_STRONG_SELL = -3
 SCORE_BUY = 2
 SCORE_SELL = -2
 
-TODAY = date.today().isoformat()
-END_DATE = (date.today() + timedelta(days=1)).isoformat()
-START_DATE = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
-FETCH_START = (date.today() - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isoformat()
+_today = datetime.now(tz=UTC).date()
+TODAY = _today.isoformat()
+END_DATE = (_today + timedelta(days=1)).isoformat()
+START_DATE = (_today - timedelta(days=LOOKBACK_DAYS)).isoformat()
+FETCH_START = (_today - timedelta(days=LOOKBACK_DAYS + WARMUP_DAYS)).isoformat()
 
 _OVERALL_COLOR = {
     "積極加碼": "#9d0208",

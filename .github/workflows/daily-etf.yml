@@ -9,7 +9,7 @@ on:
   workflow_dispatch: # 允許手動觸發
     inputs:
       tickers:
-        description: "股票代號（用逗號或空白分隔，例如 00735.TW,009816.TW,^TWII；留空則沿用排程預設清單）"
+        description: "股票代號（用逗號或空白分隔，例如 VOO,009816.TW,^TWII；留空則沿用排程預設清單）"
         required: false
         default: ""
 

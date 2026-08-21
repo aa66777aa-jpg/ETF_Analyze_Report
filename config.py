@@ -70,7 +70,7 @@ def parse_stock_input() -> list[str]:
     """從 CLI 參數或互動輸入取得股票代號清單。
 
     使用方式：
-      python main.py 00735.TW 009816.TW ^TWII    ← 直接傳參數
+      python main.py VOO 009816.TW ^TWII    ← 直接傳參數
       python main.py                              ← 互動輸入模式（以逗號或空白分隔）
     """
     # 1. 優先使用 CLI 參數
@@ -78,7 +78,7 @@ def parse_stock_input() -> list[str]:
     if args:
         tickers: list[str] = []
         for arg in args:
-            # 支援逗號分隔的寫法，例如 "00735.TW,009816.TW"
+            # 支援逗號分隔的寫法，例如 "VOO,009816.TW,^TWII"
             for part in arg.split(","):
                 t = _validate_ticker(part)
                 if t:
@@ -95,7 +95,7 @@ def parse_stock_input() -> list[str]:
     print("=" * 50)
     print("請輸入要查詢的股票代號（以逗號或空白分隔）")
     print("指數請加 ^ 前綴（如 ^TWII），輸入完畢按 Enter")
-    print("範例：00735.TW, 009816.TW, ^TWII")
+    print("範例：VOO, 009816.TW, ^TWII")
     print("-" * 50)
 
     try:

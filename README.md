@@ -96,10 +96,10 @@ uv sync
 
 ```bash
 # 方式一：直接傳參數（以空格或逗號分隔）
-uv run python main.py 00735.TW 009816.TW ^TWII
+uv run python main.py VOO 009816.TW ^TWII
 
 # 方式二：逗號分隔寫法
-uv run python main.py 00735.TW,009816.TW,^TWII
+uv run python main.py VOO,009816.TW,^TWII
 
 # 方式三：互動輸入模式（不帶參數，程式會提示輸入）
 uv run python main.py
@@ -316,7 +316,7 @@ Checkout repo
 > **注意**：目前 GitHub Actions 工作流程中 `main.py` 未帶股票代號參數，在 CI 環境（無互動輸入）下會因 `EOFError` 自動退出。若需在 CI 中自動執行，請在 `daily-etf.yml` 的 `Run ETF analysis` 步驟加上要分析的代號，例如：
 > ```yaml
 > - name: Run ETF analysis
->   run: uv run python main.py 00735.TW 009816.TW ^TWII
+>   run: uv run python main.py VOO 009816.TW ^TWII
 > ```
 
 ## 依賴套件

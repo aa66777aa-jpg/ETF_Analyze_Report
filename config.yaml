@@ -4,7 +4,7 @@
 
 # 股票代號改為執行時輸入（CLI 參數或互動輸入），不再寫在此設定檔中。
 # 用法：
-#   python main.py 00735.TW 009816.TW ^TWII    ← 直接傳參數
+#   python main.py VOO 009816.TW ^TWII    ← 直接傳參數
 #   python main.py                              ← 互動輸入模式
 # ^ 開頭視為指數，僅顯示市場環境，不給加碼建議。
 # 反向型 / 槓桿型 ETF 請維護下方 inverse_list / leverage_list，

@@ -7,6 +7,11 @@ on:
     # 【美股排程】台灣時間週二到週六 06:30 執行 (確保冬夏令皆安全，等於 UTC 22:30)
     - cron: "30 22 * * 1-5"
   workflow_dispatch: # 允許手動觸發
+    inputs:
+      tickers:
+        description: "股票代號（用逗號或空白分隔，例如 00735.TW,009816.TW,^TWII；留空則沿用排程預設清單）"
+        required: false
+        default: ""
 
 # 👇 必須加上這段，否則最後的 git push 會失敗
 permissions:
@@ -39,7 +44,14 @@ jobs:
         run: uv run python -c "import matplotlib, shutil; shutil.rmtree(matplotlib.get_cachedir(), ignore_errors=True)"
 
       - name: Run ETF analysis
-        run: uv run python main.py
+        env:
+          TICKERS_INPUT: ${{ github.event.inputs.tickers }}
+        run: |
+          if [ -n "$TICKERS_INPUT" ]; then
+            uv run python main.py $TICKERS_INPUT
+          else
+            uv run python main.py ^TWII ^KS11
+          fi
 
       - name: Commit updated charts
         run: |
